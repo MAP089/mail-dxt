@@ -9,10 +9,6 @@
     "url": "https://github.com/MAP089"
   },
   "icon": "icon.png",
-  "scripts": {
-    "start": "node server/index.js",
-    "build": "npx @anthropic-ai/dxt pack"
-  },
   "server": {
     "type": "node",
     "entry_point": "server/index.js",
@@ -34,8 +30,5 @@
     { "name": "mail_delete_to_trash", "description": "Mail in den Papierkorb verschieben" }
   ],
   "keywords": ["mcp", "mail", "applescript", "macos"],
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^0.6.0"
-  },
   "license": "MIT"
 }
