@@ -1,20 +1,13 @@
 {
   "dxt_version": "0.1",
-  "name": "Control your Mac",
-  "version": "0.0.1",
-  "description": "Execute AppleScript to automate tasks on macOS.",
-  "long_description": "This tool allows you to execute AppleScript commands using `osascript`, enabling automation of tasks on macOS systems. Try asking Claude to do things on your Mac, like controlling applications or changing system settings.",
+  "name": "mail-dxt",
+  "version": "1.0.0",
+  "description": "Sichere Mail.app-Steuerung für Claude Desktop – nur fest definierte Funktionen, kein freies AppleScript.",
+  "long_description": "Erlaubt Claude Desktop, die macOS Mail.app sicher zu steuern: Mails lesen, suchen, Entwürfe erstellen und Mails verschieben. Kein direktes Senden, keine permanente Löschung, kein Shell-Zugriff.",
   "author": {
-    "name": "Kenneth Lien",
-    "url": "https://kennethlien.com"
+    "name": "David",
+    "url": "https://github.com/MAP089"
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/k6l3/osascript-dxt"
-  },
-  "homepage": "https://github.com/k6l3/osascript-dxt",
-  "documentation": "https://github.com/k6l3/osascript-dxt",
-  "support": "https://github.com/k6l3/osascript-dxt/issues",
   "icon": "icon.png",
   "scripts": {
     "start": "node server/index.js",
@@ -32,16 +25,15 @@
     }
   },
   "tools": [
-    {
-      "name": "osascript",
-      "description": "Execute `osascript -e <script>`"
-    }
+    { "name": "mail_list_accounts", "description": "Alle Mail-Konten auflisten" },
+    { "name": "mail_list_mailboxes", "description": "Mailboxen eines Kontos auflisten" },
+    { "name": "mail_search", "description": "Mails in einer Mailbox suchen" },
+    { "name": "mail_read", "description": "Eine Mail lesen" },
+    { "name": "mail_compose_draft", "description": "Entwurf erstellen (kein automatisches Senden)" },
+    { "name": "mail_move", "description": "Mail in eine andere Mailbox verschieben" },
+    { "name": "mail_delete_to_trash", "description": "Mail in den Papierkorb verschieben" }
   ],
-  "keywords": [
-    "mcp",
-    "applescript",
-    "osascript"
-  ],
+  "keywords": ["mcp", "mail", "applescript", "macos"],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^0.6.0"
   },

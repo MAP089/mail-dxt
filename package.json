@@ -1,12 +1,12 @@
 {
-  "name": "osascript",
-  "version": "0.0.1",
-  "description": "Execute osascript",
+  "name": "mail-dxt",
+  "version": "1.0.0",
+  "description": "Sichere Mail.app-Steuerung für Claude Desktop",
   "type": "module",
   "scripts": {
     "start": "node server/index.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^0.6.0"
+    "@modelcontextprotocol/sdk": "^1.29.0"
   }
 }
