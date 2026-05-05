@@ -1,6 +1,12 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { OSASCRIPT_TIMEOUT_MS, LIMITS } from "./config.js";
+import {
+  OSASCRIPT_TIMEOUT_MS,
+  APPLESCRIPT_INNER_TIMEOUT_S,
+  DEBUG,
+  LIMITS,
+} from "./config.js";
+import { writeAuditLog } from "./audit.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -24,11 +30,29 @@ function validateScript(script) {
   }
 }
 
+function wrapWithTimeout(script) {
+  return `with timeout of ${APPLESCRIPT_INNER_TIMEOUT_S} seconds\n${script}\nend timeout`;
+}
+
 export async function runAppleScript(script) {
   validateScript(script);
+  const wrapped = wrapWithTimeout(script);
+
+  if (DEBUG) {
+    await writeAuditLog(
+      "runAppleScript",
+      {
+        node_timeout_ms: OSASCRIPT_TIMEOUT_MS,
+        applescript_timeout_s: APPLESCRIPT_INNER_TIMEOUT_S,
+        script: wrapped,
+      },
+      "debug"
+    );
+  }
+
   try {
     const { stdout } = await execFileAsync("/usr/bin/osascript", ["-"], {
-      input: script,
+      input: wrapped,
       timeout: OSASCRIPT_TIMEOUT_MS,
       maxBuffer: 4 * 1024 * 1024,
     });
@@ -36,10 +60,34 @@ export async function runAppleScript(script) {
   } catch (err) {
     const stderr = (err.stderr || "").toString().trim();
     const stdout = (err.stdout || "").toString().trim();
-    const killed = err.killed ? " [TIMEOUT/KILLED]" : "";
-    const code = err.code !== undefined ? ` (exit ${err.code})` : "";
-    const sig = err.signal ? ` (signal ${err.signal})` : "";
-    throw new Error(`osascript failed${code}${sig}${killed}: stderr="${stderr}" stdout="${stdout}"`);
+    const killed = !!err.killed;
+    const code = err.code;
+    const signal = err.signal;
+
+    if (DEBUG) {
+      await writeAuditLog(
+        "runAppleScript",
+        {
+          node_timeout_ms: OSASCRIPT_TIMEOUT_MS,
+          applescript_timeout_s: APPLESCRIPT_INNER_TIMEOUT_S,
+          script: wrapped,
+          stderr,
+          stdout,
+          killed,
+          code,
+          signal,
+        },
+        "error",
+        "osascript failed (debug)"
+      );
+    }
+
+    const killedStr = killed ? " [TIMEOUT/KILLED]" : "";
+    const codeStr = code !== undefined ? ` (exit ${code})` : "";
+    const sigStr = signal ? ` (signal ${signal})` : "";
+    throw new Error(
+      `osascript failed${codeStr}${sigStr}${killedStr}: stderr="${stderr}" stdout="${stdout}"`
+    );
   }
 }
 
