@@ -26,12 +26,21 @@ function validateScript(script) {
 
 export async function runAppleScript(script) {
   validateScript(script);
-  const { stdout } = await execFileAsync("osascript", ["-"], {
-    input: script,
-    timeout: OSASCRIPT_TIMEOUT_MS,
-    maxBuffer: 4 * 1024 * 1024,
-  });
-  return stdout.trim();
+  try {
+    const { stdout } = await execFileAsync("/usr/bin/osascript", ["-"], {
+      input: script,
+      timeout: OSASCRIPT_TIMEOUT_MS,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    return stdout.trim();
+  } catch (err) {
+    const stderr = (err.stderr || "").toString().trim();
+    const stdout = (err.stdout || "").toString().trim();
+    const killed = err.killed ? " [TIMEOUT/KILLED]" : "";
+    const code = err.code !== undefined ? ` (exit ${err.code})` : "";
+    const sig = err.signal ? ` (signal ${err.signal})` : "";
+    throw new Error(`osascript failed${code}${sig}${killed}: stderr="${stderr}" stdout="${stdout}"`);
+  }
 }
 
 export function buildListAccounts() {
