@@ -4,7 +4,8 @@
   "description": "Sichere Mail.app-Steuerung für Claude Desktop",
   "type": "module",
   "scripts": {
-    "start": "node server/index.js"
+    "start": "node server/index.js",
+    "build": "npx --yes @anthropic-ai/dxt pack . mail-control.dxt"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0"
