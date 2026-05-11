@@ -24,6 +24,7 @@ import {
   buildMoveMessage,
   buildDeleteToTrash,
 } from "./applescript.js";
+import { accountsCache, mailboxesCache } from "./cache.js";
 
 const server = new Server(
   { name: "mail-dxt", version: "1.0.0" },
@@ -131,18 +132,30 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     switch (tool) {
       case "mail_list_accounts": {
+        const cached = accountsCache.get("all");
+        if (cached) {
+          await writeAuditLog(tool, args, "cache_hit");
+          return { content: [{ type: "text", text: JSON.stringify({ accounts: cached }, null, 2) }] };
+        }
         const script = buildListAccounts();
         const raw = await runAppleScript(script);
         const accounts = raw.split(",").map(s => s.trim()).filter(Boolean);
+        accountsCache.set("all", accounts);
         result = { accounts };
         break;
       }
 
       case "mail_list_mailboxes": {
         validateAccountName(args.account_name);
+        const cached = mailboxesCache.get(args.account_name);
+        if (cached) {
+          await writeAuditLog(tool, args, "cache_hit");
+          return { content: [{ type: "text", text: JSON.stringify({ mailboxes: cached }, null, 2) }] };
+        }
         const script = buildListMailboxes(args.account_name);
         const raw = await runAppleScript(script);
         const mailboxes = raw.split(",").map(s => s.trim()).filter(Boolean);
+        mailboxesCache.set(args.account_name, mailboxes);
         result = { mailboxes };
         break;
       }
