@@ -18,4 +18,10 @@ export const APPLESCRIPT_INNER_TIMEOUT_S =
 export const DEBUG =
   process.env.MAIL_DXT_DEBUG === "1" || process.env.MAIL_DXT_DEBUG === "true";
 
+// Maximale Anzahl Mails, die mail_search rückwärts durchsucht.
+// Verhindert, dass bei extrem großen Mailboxen die Suche endlos läuft.
+// Suche bricht ab sobald entweder fetch-limit oder dieser Wert erreicht ist.
+export const SEARCH_SCAN_MAX =
+  Number(process.env.MAIL_DXT_SEARCH_SCAN_MAX) || 2000;
+
 export const AUDIT_LOG_PATH = `${process.env.HOME}/.mail-dxt-audit.log`;

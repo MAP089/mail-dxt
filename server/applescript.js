@@ -5,6 +5,7 @@ import {
   APPLESCRIPT_INNER_TIMEOUT_S,
   DEBUG,
   LIMITS,
+  SEARCH_SCAN_MAX,
 } from "./config.js";
 import { writeAuditLog } from "./audit.js";
 
@@ -168,33 +169,62 @@ export function buildSearch(account_name, mailbox_name, query, unread_only, limi
   const acc = escapeAppleScript(account_name);
   const mb = escapeAppleScript(mailbox_name);
   const q = query ? escapeAppleScript(query) : "";
+  const hasQuery = Boolean(q);
 
-  let filterCondition = "";
-  if (unread_only && q) {
-    filterCondition = `whose (read status is false) and (subject contains "${q}" or sender contains "${q}")`;
-  } else if (unread_only) {
-    filterCondition = `whose read status is false`;
-  } else if (q) {
-    filterCondition = `whose (subject contains "${q}" or sender contains "${q}")`;
-  }
+  // Manuelle Rückwärts-Iteration statt `whose`-Vorfilterung über die ganze Mailbox.
+  // - Bricht ab, sobald `fetchLimit` Treffer gefunden wurden ODER
+  // - Bricht ab, sobald `scanMax` Mails inspiziert wurden (Cap gegen Endlossuche)
+  // - Beginnt am neuesten Ende der Mailbox (Index = count, dann count-1, ...)
+  const unreadCheck = unread_only ? `
+    try
+      if read status of m then set matches to false
+    on error
+      set matches to false
+    end try` : "";
+
+  const queryCheck = hasQuery ? `
+    if matches then
+      try
+        set tmpSubject to subject of m
+        set tmpSender to sender of m
+        if tmpSubject does not contain "${q}" and tmpSender does not contain "${q}" then
+          set matches to false
+        end if
+      on error
+        set matches to false
+      end try
+    end if` : "";
 
   return `tell application "Mail"
   set targetAccount to first account whose name is "${acc}"
   set targetMailbox to first mailbox of targetAccount whose name is "${mb}"
-  set allMessages to messages ${filterCondition} of targetMailbox
+  set msgRefs to messages of targetMailbox
+  set msgCount to count of msgRefs
+  set fetchLimit to ${limit}
+  set scanMax to ${SEARCH_SCAN_MAX}
   set resultList to {}
-  set msgCount to count of allMessages
-  set fetchCount to ${limit}
-  if msgCount < fetchCount then set fetchCount to msgCount
-  repeat with i from 1 to fetchCount
-    set m to item i of allMessages
-    set msgId to id of m
-    set msgSubject to subject of m
-    set msgSender to sender of m
-    set msgDate to date sent of m as string
-    set msgRead to read status of m
-    set end of resultList to (msgId as string) & "|||" & msgSubject & "|||" & msgSender & "|||" & msgDate & "|||" & (msgRead as string)
+  set found to 0
+  set scanned to 0
+  set i to msgCount
+
+  repeat while found < fetchLimit and scanned < scanMax and i ≥ 1
+    set m to item i of msgRefs
+    set matches to true${unreadCheck}${queryCheck}
+    if matches then
+      try
+        set msgId to id of m
+        set msgSubject to subject of m
+        set msgSender to sender of m
+        set msgDate to date sent of m as string
+        set msgRead to read status of m
+        set end of resultList to (msgId as string) & "|||" & msgSubject & "|||" & msgSender & "|||" & msgDate & "|||" & (msgRead as string)
+        set found to found + 1
+      end try
+    end if
+    set i to i - 1
+    set scanned to scanned + 1
   end repeat
+
   set AppleScript's text item delimiters to "${LIST_SEPARATOR}"
   set joinedResult to resultList as string
   set AppleScript's text item delimiters to {""}
