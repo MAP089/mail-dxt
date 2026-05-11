@@ -10,6 +10,30 @@ import { writeAuditLog } from "./audit.js";
 
 const execFileAsync = promisify(execFile);
 
+// --- Retry-Konfiguration ---
+const MAX_RETRIES = Number(process.env.MAIL_DXT_MAX_RETRIES) || 3;
+const RETRY_BASE_DELAY_MS = Number(process.env.MAIL_DXT_RETRY_BASE_DELAY_MS) || 1000;
+
+// Fehlermuster, die typischerweise transient sind (Mail.app kurz busy/hängt)
+const RETRYABLE_ERROR_PATTERNS = [
+  /timed?\s*out/i,
+  /not\s+responding/i,
+  /connection.*invalid/i,
+  /lost\s+connection/i,
+  /busy/i,
+];
+
+function isRetryableError(err) {
+  // Outer-Timeout durch Node oder SIGTERM-Kill → retry
+  if (err.killed === true || err.signal === "SIGTERM") return true;
+  const stderr = (err.stderr || "").toString();
+  return RETRYABLE_ERROR_PATTERNS.some((p) => p.test(stderr));
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 const BLOCKED_PATTERNS = [
   /do\s+shell\s+script/i,
   /tell\s+application\s+"(?!Mail")[^"]+"/i,
@@ -50,45 +74,62 @@ export async function runAppleScript(script) {
     );
   }
 
-  try {
-    const { stdout } = await execFileAsync("/usr/bin/osascript", ["-"], {
-      input: wrapped,
-      timeout: OSASCRIPT_TIMEOUT_MS,
-      maxBuffer: 4 * 1024 * 1024,
-    });
-    return stdout.trim();
-  } catch (err) {
-    const stderr = (err.stderr || "").toString().trim();
-    const stdout = (err.stdout || "").toString().trim();
-    const killed = !!err.killed;
-    const code = err.code;
-    const signal = err.signal;
+  let lastErr;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const { stdout } = await execFileAsync("/usr/bin/osascript", ["-"], {
+        input: wrapped,
+        timeout: OSASCRIPT_TIMEOUT_MS,
+        maxBuffer: 4 * 1024 * 1024,
+      });
+      return stdout.trim();
+    } catch (err) {
+      lastErr = err;
+      const stderr = (err.stderr || "").toString().trim();
+      const stdout = (err.stdout || "").toString().trim();
+      const killed = !!err.killed;
+      const code = err.code;
+      const signal = err.signal;
 
-    if (DEBUG) {
-      await writeAuditLog(
-        "runAppleScript",
-        {
-          node_timeout_ms: OSASCRIPT_TIMEOUT_MS,
-          applescript_timeout_s: APPLESCRIPT_INNER_TIMEOUT_S,
-          script: wrapped,
-          stderr,
-          stdout,
-          killed,
-          code,
-          signal,
-        },
-        "error",
-        "osascript failed (debug)"
+      const canRetry = isRetryableError(err) && attempt < MAX_RETRIES;
+
+      if (DEBUG) {
+        await writeAuditLog(
+          "runAppleScript",
+          {
+            attempt,
+            max_retries: MAX_RETRIES,
+            will_retry: canRetry,
+            node_timeout_ms: OSASCRIPT_TIMEOUT_MS,
+            applescript_timeout_s: APPLESCRIPT_INNER_TIMEOUT_S,
+            stderr,
+            stdout,
+            killed,
+            code,
+            signal,
+          },
+          canRetry ? "warn" : "error",
+          canRetry ? "transient failure, retrying" : "osascript failed (debug)"
+        );
+      }
+
+      if (canRetry) {
+        const delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+        await sleep(delay);
+        continue;
+      }
+
+      const killedStr = killed ? " [TIMEOUT/KILLED]" : "";
+      const codeStr = code !== undefined ? ` (exit ${code})` : "";
+      const sigStr = signal ? ` (signal ${signal})` : "";
+      throw new Error(
+        `osascript failed${codeStr}${sigStr}${killedStr} after ${attempt} attempt(s): stderr="${stderr}" stdout="${stdout}"`
       );
     }
-
-    const killedStr = killed ? " [TIMEOUT/KILLED]" : "";
-    const codeStr = code !== undefined ? ` (exit ${code})` : "";
-    const sigStr = signal ? ` (signal ${signal})` : "";
-    throw new Error(
-      `osascript failed${codeStr}${sigStr}${killedStr}: stderr="${stderr}" stdout="${stdout}"`
-    );
   }
+
+  // Unerreichbar, aber Safety-Net falls die Schleife unerwartet beendet:
+  throw lastErr ?? new Error("runAppleScript: unbekannter Fehler ohne Versuch");
 }
 
 export function buildListAccounts() {
