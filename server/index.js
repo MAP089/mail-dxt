@@ -23,6 +23,7 @@ import {
   buildComposeDraft,
   buildMoveMessage,
   buildDeleteToTrash,
+  LIST_SEPARATOR,
 } from "./applescript.js";
 import { accountsCache, mailboxesCache } from "./cache.js";
 
@@ -139,7 +140,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
         const script = buildListAccounts();
         const raw = await runAppleScript(script);
-        const accounts = raw.split(",").map(s => s.trim()).filter(Boolean);
+        const accounts = raw.split(LIST_SEPARATOR).map(s => s.trim()).filter(Boolean);
         accountsCache.set("all", accounts);
         result = { accounts };
         break;
@@ -154,7 +155,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
         const script = buildListMailboxes(args.account_name);
         const raw = await runAppleScript(script);
-        const mailboxes = raw.split(",").map(s => s.trim()).filter(Boolean);
+        const mailboxes = raw.split(LIST_SEPARATOR).map(s => s.trim()).filter(Boolean);
         mailboxesCache.set(args.account_name, mailboxes);
         result = { mailboxes };
         break;
@@ -167,7 +168,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const unread_only = args.unread_only === true;
         const script = buildSearch(args.account_name, args.mailbox_name, args.query, unread_only, limit);
         const raw = await runAppleScript(script);
-        const lines = raw.split(",").map(s => s.trim()).filter(Boolean);
+        const lines = raw.split(LIST_SEPARATOR).map(s => s.trim()).filter(Boolean);
         const messages = lines.map(line => {
           const parts = line.split("|||");
           return {

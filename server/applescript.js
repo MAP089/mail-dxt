@@ -34,6 +34,10 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Eindeutiger Separator zwischen Listen-Items.
+// Wird im AppleScript via `text item delimiters` gesetzt und in Node zum Splitten genutzt.
+export const LIST_SEPARATOR = "|||ITEM|||";
+
 const BLOCKED_PATTERNS = [
   /do\s+shell\s+script/i,
   /tell\s+application\s+"(?!Mail")[^"]+"/i,
@@ -138,7 +142,10 @@ export function buildListAccounts() {
   repeat with a in accounts
     set end of accountNames to name of a
   end repeat
-  return accountNames
+  set AppleScript's text item delimiters to "${LIST_SEPARATOR}"
+  set joinedResult to accountNames as string
+  set AppleScript's text item delimiters to {""}
+  return joinedResult
 end tell`;
 }
 
@@ -150,7 +157,10 @@ export function buildListMailboxes(account_name) {
   repeat with mb in mailboxes of targetAccount
     set end of mbNames to name of mb
   end repeat
-  return mbNames
+  set AppleScript's text item delimiters to "${LIST_SEPARATOR}"
+  set joinedResult to mbNames as string
+  set AppleScript's text item delimiters to {""}
+  return joinedResult
 end tell`;
 }
 
@@ -185,7 +195,10 @@ export function buildSearch(account_name, mailbox_name, query, unread_only, limi
     set msgRead to read status of m
     set end of resultList to (msgId as string) & "|||" & msgSubject & "|||" & msgSender & "|||" & msgDate & "|||" & (msgRead as string)
   end repeat
-  return resultList
+  set AppleScript's text item delimiters to "${LIST_SEPARATOR}"
+  set joinedResult to resultList as string
+  set AppleScript's text item delimiters to {""}
+  return joinedResult
 end tell`;
 }
 
