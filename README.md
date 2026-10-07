@@ -27,7 +27,7 @@ Sichere Mail.app-Steuerung für Claude Desktop – als Desktop Extension (DXT) v
 
 ## Installation
 
-1. `mail-dxt.dxt` selbst bauen (siehe [Build](#build)) – ein offizielles Release folgt später.
+1. `mail-control.dxt` selbst bauen (siehe [Build](#build)) – ein offizielles Release folgt später.
 2. Datei per Drag-and-Drop in Claude Desktop ziehen oder über *Settings → Extensions* installieren.
 3. Beim ersten Aufruf fragt macOS nach der Automation-Berechtigung für Mail.app – einmal bestätigen.
 
@@ -41,10 +41,18 @@ Sichere Mail.app-Steuerung für Claude Desktop – als Desktop Extension (DXT) v
 
 ```bash
 npm install
-dxt pack
+npm run build
 ```
 
-Erzeugt `mail-dxt.dxt` im Projektverzeichnis. Setup-Anleitung für das `dxt`-CLI: <https://github.com/anthropics/dxt>.
+Erzeugt `mail-control.dxt` im Projektverzeichnis (das Build-Skript ruft `@anthropic-ai/dxt pack` auf). Hintergründe zum DXT-Format: <https://github.com/anthropics/dxt>.
+
+## Audit-Log
+
+Jeder Tool-Aufruf wird in `~/.mail-dxt-audit.log` protokolliert (eine JSON-Zeile pro Aufruf: Zeitpunkt, Tool, Status). Wichtig zu wissen:
+
+- Im Log stehen **alle übergebenen Argumente im Klartext**, bei `mail_compose_draft` also auch Betreff, Empfänger und Text des Entwurfs.
+- Mit `MAIL_DXT_DEBUG=1` zusätzlich das vollständige AppleScript und bei Fehlern die Ausgabe von `osascript`. Im mitgelieferten `manifest.json` ist dieser Schalter derzeit auf `1` gesetzt.
+- Die Datei wird nie rotiert oder gekürzt. Bei Bedarf manuell löschen.
 
 ## Lizenz
 
