@@ -219,8 +219,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         validateMailboxName(args.mailbox_name);
         validateMessageId(args.message_id);
         const script = buildDeleteToTrash(args.account_name, args.mailbox_name, args.message_id);
-        await runAppleScript(script);
-        result = { status: "Mail in Papierkorb verschoben" };
+        const trashMailbox = await runAppleScript(script);
+        result = { status: "Mail in Papierkorb verschoben", trash_mailbox: trashMailbox };
         break;
       }
 
