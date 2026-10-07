@@ -5,6 +5,7 @@ import {
   APPLESCRIPT_INNER_TIMEOUT_S,
   DEBUG,
   LIMITS,
+  TRASH_MAILBOX_NAMES,
 } from "./config.js";
 import { writeAuditLog } from "./audit.js";
 
@@ -19,7 +20,7 @@ function escapeAppleScript(s) {
   return String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
-function validateScript(script) {
+export function validateScript(script) {
   for (const pattern of BLOCKED_PATTERNS) {
     if (pattern.test(script)) {
       throw new Error(`Verbotenes Muster im AppleScript gefunden: ${pattern}`);
@@ -215,11 +216,19 @@ end tell`;
 export function buildDeleteToTrash(account_name, mailbox_name, message_id) {
   const acc = escapeAppleScript(account_name);
   const mb = escapeAppleScript(mailbox_name);
+  const candidates = TRASH_MAILBOX_NAMES.map(n => `"${escapeAppleScript(n)}"`).join(", ");
   return `tell application "Mail"
   set targetAccount to first account whose name is "${acc}"
   set targetMailbox to first mailbox of targetAccount whose name is "${mb}"
   set m to first message of targetMailbox whose id is ${message_id}
-  set trashMailbox to first mailbox of targetAccount whose name is "Trash"
+  set trashMailbox to missing value
+  repeat with candidateName in {${candidates}}
+    try
+      set trashMailbox to first mailbox of targetAccount whose name is (candidateName as string)
+      exit repeat
+    end try
+  end repeat
+  if trashMailbox is missing value then error "Papierkorb für dieses Konto nicht gefunden. Name über MAIL_DXT_TRASH_MAILBOX festlegen."
   move m to trashMailbox
   return "ok"
 end tell`;

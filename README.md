@@ -48,11 +48,33 @@ Erzeugt `mail-control.dxt` im Projektverzeichnis (das Build-Skript ruft `@anthro
 
 ## Audit-Log
 
-Jeder Tool-Aufruf wird in `~/.mail-dxt-audit.log` protokolliert (eine JSON-Zeile pro Aufruf: Zeitpunkt, Tool, Status). Wichtig zu wissen:
+Jeder Tool-Aufruf wird in `~/.mail-dxt-audit.log` protokolliert (eine JSON-Zeile pro Aufruf: Zeitpunkt, Tool, Parameter, Status).
 
-- Im Log stehen **alle übergebenen Argumente im Klartext**, bei `mail_compose_draft` also auch Betreff, Empfänger und Text des Entwurfs.
-- Mit `MAIL_DXT_DEBUG=1` zusätzlich das vollständige AppleScript und bei Fehlern die Ausgabe von `osascript`. Im mitgelieferten `manifest.json` ist dieser Schalter derzeit auf `1` gesetzt.
+- `body` (Entwurfstext) und `query` (Suchbegriff) stehen **nicht** im Klartext im Log, nur ihre Länge (z. B. `<120 Zeichen>`). Betreff, Konto, Mailbox und Empfänger werden im Klartext protokolliert.
+- Die Datei wird mit den Rechten `600` angelegt (nur du kannst sie lesen). Für bereits vorhandene Logdateien ändert sich nichts.
+- Mit `MAIL_DXT_DEBUG=1` wird zusätzlich das vollständige AppleScript protokolliert, **einschließlich Entwurfstext und Suchbegriff**. Im mitgelieferten `manifest.json` ist der Schalter aus (`0`); nur zur Fehlersuche einschalten.
 - Die Datei wird nie rotiert oder gekürzt. Bei Bedarf manuell löschen.
+
+## Konfiguration
+
+Umgebungsvariablen (im `manifest.json` unter `mcp_config.env`):
+
+| Variable | Wirkung |
+|---|---|
+| `MAIL_DXT_OSASCRIPT_TIMEOUT_MS` | Timeout für `osascript` in Millisekunden |
+| `MAIL_DXT_APPLESCRIPT_TIMEOUT_S` | Timeout innerhalb des AppleScripts in Sekunden |
+| `MAIL_DXT_DEBUG` | `1` protokolliert zusätzlich das vollständige AppleScript (siehe Audit-Log) |
+| `MAIL_DXT_TRASH_MAILBOX` | Name des Papierkorbs, falls er bei deinem Konto anders heißt |
+
+`mail_delete_to_trash` sucht den Papierkorb des Kontos der Reihe nach unter `Trash`, `Deleted Messages`, `Deleted Items`, `Papierkorb`, `Gelöschte Objekte`, `Gelöschte Elemente`, `[Gmail]/Trash` und `[Google Mail]/Papierkorb`. Wird keiner gefunden, bricht der Aufruf mit einer Fehlermeldung ab, die Mail wird dann nicht verschoben.
+
+## Tests
+
+```bash
+npm test
+```
+
+Die Tests prüfen das erzeugte AppleScript (Escaping, Sicherheitsfilter, Papierkorb-Namen) und das Audit-Log. Sie führen kein `osascript` aus und laufen daher auch ohne macOS.
 
 ## Lizenz
 

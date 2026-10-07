@@ -18,4 +18,18 @@ export const APPLESCRIPT_INNER_TIMEOUT_S =
 export const DEBUG =
   process.env.MAIL_DXT_DEBUG === "1" || process.env.MAIL_DXT_DEBUG === "true";
 
+// Mögliche Namen des Papierkorbs je nach Kontotyp und Systemsprache (in dieser Reihenfolge probiert).
+// Eigener Name zuerst über MAIL_DXT_TRASH_MAILBOX.
+export const TRASH_MAILBOX_NAMES = [
+  ...(process.env.MAIL_DXT_TRASH_MAILBOX ? [process.env.MAIL_DXT_TRASH_MAILBOX] : []),
+  "Trash",
+  "Deleted Messages",
+  "Deleted Items",
+  "Papierkorb",
+  "Gelöschte Objekte",
+  "Gelöschte Elemente",
+  "[Gmail]/Trash",
+  "[Google Mail]/Papierkorb",
+];
+
 export const AUDIT_LOG_PATH = `${process.env.HOME}/.mail-dxt-audit.log`;
