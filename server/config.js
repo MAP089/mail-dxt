@@ -1,3 +1,6 @@
+import { homedir } from "os";
+import { join } from "path";
+
 // Wenn leer = alle Konten erlaubt. Wenn gefüllt = nur diese Konten.
 export const ALLOWED_ACCOUNTS = [];
 
@@ -21,4 +24,10 @@ export const APPLESCRIPT_INNER_TIMEOUT_S =
 export const DEBUG =
   process.env.MAIL_DXT_DEBUG === "1" || process.env.MAIL_DXT_DEBUG === "true";
 
-export const AUDIT_LOG_PATH = `${process.env.HOME}/.mail-dxt-audit.log`;
+// Üblicher Ort für Logs unter macOS – damit auch in der Konsole-App sichtbar.
+export const AUDIT_LOG_PATH = join(homedir(), "Library", "Logs", "mail-dxt", "audit.log");
+
+export const AUDIT = {
+  max_bytes: 5 * 1024 * 1024, // danach wird nach audit.log.1 rotiert
+  subject_max_length: 100,
+};

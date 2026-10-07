@@ -25,6 +25,15 @@ Sichere Mail.app-Steuerung für Claude Desktop – als Desktop Extension (DXT) v
 - **Keine permanente Löschung:** Mails wandern höchstens in den Papierkorb und können von dort wiederhergestellt werden.
 - **Eingabevalidierung:** Alle Parameter (Konto, Mailbox, IDs) werden vor der Übergabe an osascript validiert.
 
+## Audit-Log
+
+Jeder Tool-Aufruf wird in `~/Library/Logs/mail-dxt/audit.log` protokolliert (auch in der Konsole-App sichtbar).
+
+- Protokolliert wird, **was** getan wurde – Konto, Mailbox, Message-ID, Empfänger, Suchbegriff. Mailtexte von Entwürfen erscheinen nur als Länge, Betreffs werden auf 100 Zeichen gekürzt; gelesene Mails werden nicht protokolliert.
+- Ordner und Datei sind nur für den eigenen Benutzer lesbar.
+- Ab 5 MB wird das Log nach `audit.log.1` rotiert.
+- `MAIL_DXT_DEBUG=1` (in `manifest.json`) schreibt zusätzlich die kompletten AppleScripts samt Inhalten mit – nur zur Fehlersuche einschalten.
+
 ## Installation
 
 1. `mail-dxt.dxt` selbst bauen (siehe [Build](#build)) – ein offizielles Release folgt später.
