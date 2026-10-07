@@ -18,8 +18,8 @@
         "${__dirname}/server/index.js"
       ],
       "env": {
-        "MAIL_DXT_OSASCRIPT_TIMEOUT_MS": "120000",
-        "MAIL_DXT_APPLESCRIPT_TIMEOUT_S": "100",
+        "MAIL_DXT_OSASCRIPT_TIMEOUT_MS": "50000",
+        "MAIL_DXT_APPLESCRIPT_TIMEOUT_S": "40",
         "MAIL_DXT_DEBUG": "1"
       }
     }

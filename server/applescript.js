@@ -1,14 +1,48 @@
 import { execFile } from "child_process";
-import { promisify } from "util";
 import {
   OSASCRIPT_TIMEOUT_MS,
   APPLESCRIPT_INNER_TIMEOUT_S,
   DEBUG,
-  LIMITS,
 } from "./config.js";
 import { writeAuditLog } from "./audit.js";
 
-const execFileAsync = promisify(execFile);
+// Das asynchrone execFile kennt keine "input"-Option (die gibt es nur bei
+// execFileSync/spawnSync). Ohne explizites Schreiben + Schließen von stdin
+// wartet "osascript -" endlos auf das Skript und läuft in den Timeout.
+function execOsascript(script) {
+  return new Promise((resolve, reject) => {
+    const child = execFile(
+      "/usr/bin/osascript",
+      ["-"],
+      { timeout: OSASCRIPT_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024 },
+      (err, stdout, stderr) => {
+        if (err) {
+          err.stdout = stdout;
+          err.stderr = stderr;
+          reject(err);
+        } else {
+          resolve({ stdout, stderr });
+        }
+      }
+    );
+    // EPIPE o.ä., falls osascript vorzeitig endet – der Fehler kommt über den Callback.
+    child.stdin.on("error", () => {});
+    child.stdin.end(script, "utf8");
+  });
+}
+
+function errorHint(stderr, killed) {
+  if (killed) {
+    return ` – Abbruch nach ${OSASCRIPT_TIMEOUT_MS / 1000}s. Läuft Mail.app? Wartet ein macOS-Dialog (Automation-Berechtigung) auf Bestätigung?`;
+  }
+  if (stderr.includes("-1743")) {
+    return " – Keine Automation-Berechtigung: Systemeinstellungen → Datenschutz & Sicherheit → Automation → Claude → Mail aktivieren.";
+  }
+  if (stderr.includes("-1712")) {
+    return ` – Mail.app hat nicht innerhalb von ${APPLESCRIPT_INNER_TIMEOUT_S}s geantwortet.`;
+  }
+  return "";
+}
 
 const BLOCKED_PATTERNS = [
   /do\s+shell\s+script/i,
@@ -51,11 +85,7 @@ export async function runAppleScript(script) {
   }
 
   try {
-    const { stdout } = await execFileAsync("/usr/bin/osascript", ["-"], {
-      input: wrapped,
-      timeout: OSASCRIPT_TIMEOUT_MS,
-      maxBuffer: 4 * 1024 * 1024,
-    });
+    const { stdout } = await execOsascript(wrapped);
     return stdout.trim();
   } catch (err) {
     const stderr = (err.stderr || "").toString().trim();
@@ -86,7 +116,7 @@ export async function runAppleScript(script) {
     const codeStr = code !== undefined ? ` (exit ${code})` : "";
     const sigStr = signal ? ` (signal ${signal})` : "";
     throw new Error(
-      `osascript failed${codeStr}${sigStr}${killedStr}: stderr="${stderr}" stdout="${stdout}"`
+      `osascript failed${codeStr}${sigStr}${killedStr}: stderr="${stderr}" stdout="${stdout}"${errorHint(stderr, killed)}`
     );
   }
 }
@@ -97,7 +127,10 @@ export function buildListAccounts() {
   repeat with a in accounts
     set end of accountNames to name of a
   end repeat
-  return accountNames
+  set AppleScript's text item delimiters to linefeed
+  set resultText to accountNames as text
+  set AppleScript's text item delimiters to ""
+  return resultText
 end tell`;
 }
 
@@ -109,7 +142,10 @@ export function buildListMailboxes(account_name) {
   repeat with mb in mailboxes of targetAccount
     set end of mbNames to name of mb
   end repeat
-  return mbNames
+  set AppleScript's text item delimiters to linefeed
+  set resultText to mbNames as text
+  set AppleScript's text item delimiters to ""
+  return resultText
 end tell`;
 }
 
@@ -120,17 +156,29 @@ export function buildSearch(account_name, mailbox_name, query, unread_only, limi
 
   let filterCondition = "";
   if (unread_only && q) {
-    filterCondition = `whose (read status is false) and (subject contains "${q}" or sender contains "${q}")`;
+    filterCondition = `(read status is false) and (subject contains "${q}" or sender contains "${q}")`;
   } else if (unread_only) {
-    filterCondition = `whose read status is false`;
+    filterCondition = `read status is false`;
   } else if (q) {
-    filterCondition = `whose (subject contains "${q}" or sender contains "${q}")`;
+    filterCondition = `(subject contains "${q}" or sender contains "${q}")`;
   }
+
+  // Ohne Filter nur die ersten N Mails holen statt Referenzen auf die ganze
+  // Mailbox – bei großen Postfächern sonst ein sicherer Timeout.
+  const selectMessages = filterCondition
+    ? `set allMessages to (messages of targetMailbox whose ${filterCondition})`
+    : `set msgTotal to count of messages of targetMailbox
+  if msgTotal > ${limit} then set msgTotal to ${limit}
+  if msgTotal > 0 then
+    set allMessages to messages 1 thru msgTotal of targetMailbox
+  else
+    set allMessages to {}
+  end if`;
 
   return `tell application "Mail"
   set targetAccount to first account whose name is "${acc}"
   set targetMailbox to first mailbox of targetAccount whose name is "${mb}"
-  set allMessages to messages ${filterCondition} of targetMailbox
+  ${selectMessages}
   set resultList to {}
   set msgCount to count of allMessages
   set fetchCount to ${limit}
@@ -144,7 +192,10 @@ export function buildSearch(account_name, mailbox_name, query, unread_only, limi
     set msgRead to read status of m
     set end of resultList to (msgId as string) & "|||" & msgSubject & "|||" & msgSender & "|||" & msgDate & "|||" & (msgRead as string)
   end repeat
-  return resultList
+  set AppleScript's text item delimiters to linefeed
+  set resultText to resultList as text
+  set AppleScript's text item delimiters to ""
+  return resultText
 end tell`;
 }
 
@@ -163,7 +214,10 @@ export function buildReadMessage(account_name, mailbox_name, message_id) {
   repeat with r in to recipients of m
     set end of msgRecipients to address of r
   end repeat
-  return msgSubject & "|||" & msgSender & "|||" & msgDate & "|||" & (msgRecipients as string) & "|||" & msgBody
+  set AppleScript's text item delimiters to ","
+  set recipientText to msgRecipients as text
+  set AppleScript's text item delimiters to ""
+  return msgSubject & "|||" & msgSender & "|||" & msgDate & "|||" & recipientText & "|||" & msgBody
 end tell`;
 }
 

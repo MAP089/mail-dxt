@@ -133,7 +133,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "mail_list_accounts": {
         const script = buildListAccounts();
         const raw = await runAppleScript(script);
-        const accounts = raw.split(",").map(s => s.trim()).filter(Boolean);
+        const accounts = raw.split(/[\r\n]+/).map(s => s.trim()).filter(Boolean);
         result = { accounts };
         break;
       }
@@ -142,7 +142,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         validateAccountName(args.account_name);
         const script = buildListMailboxes(args.account_name);
         const raw = await runAppleScript(script);
-        const mailboxes = raw.split(",").map(s => s.trim()).filter(Boolean);
+        const mailboxes = raw.split(/[\r\n]+/).map(s => s.trim()).filter(Boolean);
         result = { mailboxes };
         break;
       }
@@ -154,7 +154,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const unread_only = args.unread_only === true;
         const script = buildSearch(args.account_name, args.mailbox_name, args.query, unread_only, limit);
         const raw = await runAppleScript(script);
-        const lines = raw.split(",").map(s => s.trim()).filter(Boolean);
+        const lines = raw.split(/[\r\n]+/).map(s => s.trim()).filter(Boolean);
         const messages = lines.map(line => {
           const parts = line.split("|||");
           return {
@@ -176,7 +176,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const script = buildReadMessage(args.account_name, args.mailbox_name, args.message_id);
         const raw = await runAppleScript(script);
         const parts = raw.split("|||");
-        const body = (parts[4] ?? "").slice(0, LIMITS.body_read_max_length);
+        const body = parts.slice(4).join("|||").slice(0, LIMITS.body_read_max_length);
         result = {
           subject: parts[0] ?? "",
           sender: parts[1] ?? "",
