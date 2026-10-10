@@ -32,4 +32,10 @@ export const TRASH_MAILBOX_NAMES = [
   "[Google Mail]/Papierkorb",
 ];
 
+// Maximale Anzahl Mails, die mail_search rückwärts durchsucht.
+// Verhindert, dass bei extrem großen Mailboxen die Suche endlos läuft.
+// Suche bricht ab sobald entweder fetch-limit oder dieser Wert erreicht ist.
+export const SEARCH_SCAN_MAX =
+  Number(process.env.MAIL_DXT_SEARCH_SCAN_MAX) || 2000;
+
 export const AUDIT_LOG_PATH = `${process.env.HOME}/.mail-dxt-audit.log`;

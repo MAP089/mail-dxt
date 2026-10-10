@@ -65,6 +65,10 @@ Umgebungsvariablen (im `manifest.json` unter `mcp_config.env`):
 | `MAIL_DXT_APPLESCRIPT_TIMEOUT_S` | Timeout innerhalb des AppleScripts in Sekunden |
 | `MAIL_DXT_DEBUG` | `1` protokolliert zusätzlich das vollständige AppleScript (siehe Audit-Log) |
 | `MAIL_DXT_TRASH_MAILBOX` | Name des Papierkorbs, falls er bei deinem Konto anders heißt |
+| `MAIL_DXT_SEARCH_SCAN_MAX` | Maximale Zahl Mails, die `mail_search` pro Aufruf durchsieht (Standard 2000) |
+| `MAIL_DXT_CACHE_TTL_MS` | Wie lange Konto- und Postfachlisten zwischengespeichert werden (Standard 60000) |
+| `MAIL_DXT_MAX_RETRIES` | Versuche bei vorübergehenden Mail.app-Fehlern, nur für lesende Aufrufe (Standard 3) |
+| `MAIL_DXT_RETRY_BASE_DELAY_MS` | Wartezeit vor dem ersten Wiederholungsversuch, verdoppelt sich je Versuch (Standard 1000) |
 
 `mail_delete_to_trash` sucht den Papierkorb des Kontos der Reihe nach unter `Trash`, `Deleted Messages`, `Deleted Items`, `Papierkorb`, `Gelöschte Objekte`, `Gelöschte Elemente`, `[Gmail]/Trash` und `[Google Mail]/Papierkorb`. Wird keiner gefunden, bricht der Aufruf mit einer Fehlermeldung ab, die Mail wird dann nicht verschoben.
 
