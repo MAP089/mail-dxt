@@ -171,10 +171,10 @@ export function buildSearch(account_name, mailbox_name, query, unread_only, limi
   const q = query ? escapeAppleScript(query) : "";
   const hasQuery = Boolean(q);
 
-  // Manuelle Rückwärts-Iteration statt `whose`-Vorfilterung über die ganze Mailbox.
+  // Manuelle Iteration statt `whose`-Vorfilterung über die ganze Mailbox.
   // - Bricht ab, sobald `fetchLimit` Treffer gefunden wurden ODER
   // - Bricht ab, sobald `scanMax` Mails inspiziert wurden (Cap gegen Endlossuche)
-  // - Beginnt am neuesten Ende der Mailbox (Index = count, dann count-1, ...)
+  // - Beginnt beim neuesten Ende der Mailbox: In Mail.app ist message 1 die neueste Mail
   const unreadCheck = unread_only ? `
     try
       if read status of m then set matches to false
@@ -205,9 +205,9 @@ export function buildSearch(account_name, mailbox_name, query, unread_only, limi
   set resultList to {}
   set found to 0
   set scanned to 0
-  set i to msgCount
+  set i to 1
 
-  repeat while found < fetchLimit and scanned < scanMax and i ≥ 1
+  repeat while found < fetchLimit and scanned < scanMax and i ≤ msgCount
     set m to item i of msgRefs
     set matches to true${unreadCheck}${queryCheck}
     if matches then
@@ -221,7 +221,7 @@ export function buildSearch(account_name, mailbox_name, query, unread_only, limi
         set found to found + 1
       end try
     end if
-    set i to i - 1
+    set i to i + 1
     set scanned to scanned + 1
   end repeat
 
