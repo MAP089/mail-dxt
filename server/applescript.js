@@ -15,9 +15,8 @@ const execFileAsync = promisify(execFile);
 const MAX_RETRIES = Number(process.env.MAIL_DXT_MAX_RETRIES) || 3;
 const RETRY_BASE_DELAY_MS = Number(process.env.MAIL_DXT_RETRY_BASE_DELAY_MS) || 1000;
 
-// Fehlermuster, die typischerweise transient sind (Mail.app kurz busy/hängt)
+// Fehlermuster, die typischerweise transient sind (Mail.app kurz busy, startet gerade)
 const RETRYABLE_ERROR_PATTERNS = [
-  /timed?\s*out/i,
   /not\s+responding/i,
   /connection.*invalid/i,
   /lost\s+connection/i,
@@ -25,8 +24,9 @@ const RETRYABLE_ERROR_PATTERNS = [
 ];
 
 function isRetryableError(err) {
-  // Outer-Timeout durch Node oder SIGTERM-Kill → retry
-  if (err.killed === true || err.signal === "SIGTERM") return true;
+  // Timeouts (Node-Kill oder AppleEvent timed out) werden NICHT wiederholt:
+  // Sie haben das Zeitbudget schon verbraucht, ein Retry vervielfacht nur die Wartezeit.
+  if (err.killed === true || err.signal === "SIGTERM") return false;
   const stderr = (err.stderr || "").toString();
   return RETRYABLE_ERROR_PATTERNS.some((p) => p.test(stderr));
 }
@@ -63,7 +63,9 @@ function wrapWithTimeout(script) {
   return `with timeout of ${APPLESCRIPT_INNER_TIMEOUT_S} seconds\n${script}\nend timeout`;
 }
 
-export async function runAppleScript(script) {
+// retry: false für schreibende Aktionen – ein Fehler heißt dort nicht sicher,
+// dass Mail die Aktion nicht doch ausgeführt hat (sonst z. B. doppelte Entwürfe).
+export async function runAppleScript(script, { retry = true } = {}) {
   validateScript(script);
   const wrapped = wrapWithTimeout(script);
 
@@ -79,14 +81,18 @@ export async function runAppleScript(script) {
     );
   }
 
+  const maxAttempts = retry ? MAX_RETRIES : 1;
   let lastErr;
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const { stdout } = await execFileAsync("/usr/bin/osascript", ["-"], {
-        input: wrapped,
+      const run = execFileAsync("/usr/bin/osascript", ["-"], {
         timeout: OSASCRIPT_TIMEOUT_MS,
         maxBuffer: 4 * 1024 * 1024,
       });
+      // Das async execFile ignoriert die `input`-Option (gibt es nur bei execFileSync) –
+      // ohne explizites Schreiben auf stdin wartet osascript bis zum Timeout.
+      run.child.stdin.end(wrapped);
+      const { stdout } = await run;
       return stdout.trim();
     } catch (err) {
       lastErr = err;
@@ -96,14 +102,14 @@ export async function runAppleScript(script) {
       const code = err.code;
       const signal = err.signal;
 
-      const canRetry = isRetryableError(err) && attempt < MAX_RETRIES;
+      const canRetry = isRetryableError(err) && attempt < maxAttempts;
 
       if (DEBUG) {
         await writeAuditLog(
           "runAppleScript",
           {
             attempt,
-            max_retries: MAX_RETRIES,
+            max_retries: maxAttempts,
             will_retry: canRetry,
             node_timeout_ms: OSASCRIPT_TIMEOUT_MS,
             applescript_timeout_s: APPLESCRIPT_INNER_TIMEOUT_S,

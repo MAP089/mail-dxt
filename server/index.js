@@ -212,7 +212,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           args.account_name, args.to, args.cc ?? [], args.bcc ?? [],
           args.subject, args.body
         );
-        const draftId = await runAppleScript(script);
+        const draftId = await runAppleScript(script, { retry: false });
         result = { status: "Entwurf erstellt", draft_id: draftId };
         break;
       }
@@ -223,7 +223,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         validateMailboxName(args.target_mailbox);
         validateMessageId(args.message_id);
         const script = buildMoveMessage(args.account_name, args.source_mailbox, args.message_id, args.target_mailbox);
-        await runAppleScript(script);
+        await runAppleScript(script, { retry: false });
         result = { status: "Mail verschoben" };
         break;
       }
@@ -233,7 +233,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         validateMailboxName(args.mailbox_name);
         validateMessageId(args.message_id);
         const script = buildDeleteToTrash(args.account_name, args.mailbox_name, args.message_id);
-        await runAppleScript(script);
+        await runAppleScript(script, { retry: false });
         result = { status: "Mail in Papierkorb verschoben" };
         break;
       }
