@@ -1,35 +1,43 @@
 import { execFile } from "child_process";
+import { promisify } from "util";
 import {
   OSASCRIPT_TIMEOUT_MS,
   APPLESCRIPT_INNER_TIMEOUT_S,
   DEBUG,
+  LIMITS,
+  SEARCH_SCAN_MAX,
 } from "./config.js";
 import { writeAuditLog } from "./audit.js";
 
-// Das asynchrone execFile kennt keine "input"-Option (die gibt es nur bei
-// execFileSync/spawnSync). Ohne explizites Schreiben + Schließen von stdin
-// wartet "osascript -" endlos auf das Skript und läuft in den Timeout.
-function execOsascript(script) {
-  return new Promise((resolve, reject) => {
-    const child = execFile(
-      "/usr/bin/osascript",
-      ["-"],
-      { timeout: OSASCRIPT_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024 },
-      (err, stdout, stderr) => {
-        if (err) {
-          err.stdout = stdout;
-          err.stderr = stderr;
-          reject(err);
-        } else {
-          resolve({ stdout, stderr });
-        }
-      }
-    );
-    // EPIPE o.ä., falls osascript vorzeitig endet – der Fehler kommt über den Callback.
-    child.stdin.on("error", () => {});
-    child.stdin.end(script, "utf8");
-  });
+const execFileAsync = promisify(execFile);
+
+// --- Retry-Konfiguration ---
+const MAX_RETRIES = Number(process.env.MAIL_DXT_MAX_RETRIES) || 3;
+const RETRY_BASE_DELAY_MS = Number(process.env.MAIL_DXT_RETRY_BASE_DELAY_MS) || 1000;
+
+// Fehlermuster, die typischerweise transient sind (Mail.app kurz busy, startet gerade)
+const RETRYABLE_ERROR_PATTERNS = [
+  /not\s+responding/i,
+  /connection.*invalid/i,
+  /lost\s+connection/i,
+  /busy/i,
+];
+
+function isRetryableError(err) {
+  // Timeouts (Node-Kill oder AppleEvent timed out) werden NICHT wiederholt:
+  // Sie haben das Zeitbudget schon verbraucht, ein Retry vervielfacht nur die Wartezeit.
+  if (err.killed === true || err.signal === "SIGTERM") return false;
+  const stderr = (err.stderr || "").toString();
+  return RETRYABLE_ERROR_PATTERNS.some((p) => p.test(stderr));
 }
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Eindeutiger Separator zwischen Listen-Items.
+// Wird im AppleScript via `text item delimiters` gesetzt und in Node zum Splitten genutzt.
+export const LIST_SEPARATOR = "|||ITEM|||";
 
 function errorHint(stderr, killed) {
   if (killed) {
@@ -68,7 +76,9 @@ function wrapWithTimeout(script) {
   return `with timeout of ${APPLESCRIPT_INNER_TIMEOUT_S} seconds\n${script}\nend timeout`;
 }
 
-export async function runAppleScript(script) {
+// retry: false für schreibende Aktionen – ein Fehler heißt dort nicht sicher,
+// dass Mail die Aktion nicht doch ausgeführt hat (sonst z. B. doppelte Entwürfe).
+export async function runAppleScript(script, { retry = true } = {}) {
   validateScript(script);
   const wrapped = wrapWithTimeout(script);
 
@@ -84,41 +94,68 @@ export async function runAppleScript(script) {
     );
   }
 
-  try {
-    const { stdout } = await execOsascript(wrapped);
-    return stdout.trim();
-  } catch (err) {
-    const stderr = (err.stderr || "").toString().trim();
-    const stdout = (err.stdout || "").toString().trim();
-    const killed = !!err.killed;
-    const code = err.code;
-    const signal = err.signal;
+  const maxAttempts = retry ? MAX_RETRIES : 1;
+  let lastErr;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const run = execFileAsync("/usr/bin/osascript", ["-"], {
+        timeout: OSASCRIPT_TIMEOUT_MS,
+        maxBuffer: 4 * 1024 * 1024,
+      });
+      // Das async execFile ignoriert die `input`-Option (gibt es nur bei execFileSync) –
+      // ohne explizites Schreiben auf stdin wartet osascript bis zum Timeout.
+      // EPIPE o.ä., falls osascript vorzeitig endet – der Fehler kommt über das Promise.
+      run.child.stdin.on("error", () => {});
+      run.child.stdin.end(wrapped);
+      const { stdout } = await run;
+      return stdout.trim();
+    } catch (err) {
+      lastErr = err;
+      const stderr = (err.stderr || "").toString().trim();
+      const stdout = (err.stdout || "").toString().trim();
+      const killed = !!err.killed;
+      const code = err.code;
+      const signal = err.signal;
 
-    if (DEBUG) {
-      await writeAuditLog(
-        "runAppleScript",
-        {
-          node_timeout_ms: OSASCRIPT_TIMEOUT_MS,
-          applescript_timeout_s: APPLESCRIPT_INNER_TIMEOUT_S,
-          script: wrapped,
-          stderr,
-          stdout,
-          killed,
-          code,
-          signal,
-        },
-        "error",
-        "osascript failed (debug)"
+      const canRetry = isRetryableError(err) && attempt < maxAttempts;
+
+      if (DEBUG) {
+        await writeAuditLog(
+          "runAppleScript",
+          {
+            attempt,
+            max_retries: maxAttempts,
+            will_retry: canRetry,
+            node_timeout_ms: OSASCRIPT_TIMEOUT_MS,
+            applescript_timeout_s: APPLESCRIPT_INNER_TIMEOUT_S,
+            stderr,
+            stdout,
+            killed,
+            code,
+            signal,
+          },
+          canRetry ? "warn" : "error",
+          canRetry ? "transient failure, retrying" : "osascript failed (debug)"
+        );
+      }
+
+      if (canRetry) {
+        const delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+        await sleep(delay);
+        continue;
+      }
+
+      const killedStr = killed ? " [TIMEOUT/KILLED]" : "";
+      const codeStr = code !== undefined ? ` (exit ${code})` : "";
+      const sigStr = signal ? ` (signal ${signal})` : "";
+      throw new Error(
+        `osascript failed${codeStr}${sigStr}${killedStr} after ${attempt} attempt(s): stderr="${stderr}" stdout="${stdout}"${errorHint(stderr, killed)}`
       );
     }
-
-    const killedStr = killed ? " [TIMEOUT/KILLED]" : "";
-    const codeStr = code !== undefined ? ` (exit ${code})` : "";
-    const sigStr = signal ? ` (signal ${signal})` : "";
-    throw new Error(
-      `osascript failed${codeStr}${sigStr}${killedStr}: stderr="${stderr}" stdout="${stdout}"${errorHint(stderr, killed)}`
-    );
   }
+
+  // Unerreichbar, aber Safety-Net falls die Schleife unerwartet beendet:
+  throw lastErr ?? new Error("runAppleScript: unbekannter Fehler ohne Versuch");
 }
 
 export function buildListAccounts() {
@@ -127,10 +164,10 @@ export function buildListAccounts() {
   repeat with a in accounts
     set end of accountNames to name of a
   end repeat
-  set AppleScript's text item delimiters to linefeed
-  set resultText to accountNames as text
-  set AppleScript's text item delimiters to ""
-  return resultText
+  set AppleScript's text item delimiters to "${LIST_SEPARATOR}"
+  set joinedResult to accountNames as string
+  set AppleScript's text item delimiters to {""}
+  return joinedResult
 end tell`;
 }
 
@@ -142,10 +179,10 @@ export function buildListMailboxes(account_name) {
   repeat with mb in mailboxes of targetAccount
     set end of mbNames to name of mb
   end repeat
-  set AppleScript's text item delimiters to linefeed
-  set resultText to mbNames as text
-  set AppleScript's text item delimiters to ""
-  return resultText
+  set AppleScript's text item delimiters to "${LIST_SEPARATOR}"
+  set joinedResult to mbNames as string
+  set AppleScript's text item delimiters to {""}
+  return joinedResult
 end tell`;
 }
 
@@ -153,49 +190,66 @@ export function buildSearch(account_name, mailbox_name, query, unread_only, limi
   const acc = escapeAppleScript(account_name);
   const mb = escapeAppleScript(mailbox_name);
   const q = query ? escapeAppleScript(query) : "";
+  const hasQuery = Boolean(q);
 
-  let filterCondition = "";
-  if (unread_only && q) {
-    filterCondition = `(read status is false) and (subject contains "${q}" or sender contains "${q}")`;
-  } else if (unread_only) {
-    filterCondition = `read status is false`;
-  } else if (q) {
-    filterCondition = `(subject contains "${q}" or sender contains "${q}")`;
-  }
+  // Manuelle Iteration statt `whose`-Vorfilterung über die ganze Mailbox.
+  // - Bricht ab, sobald `fetchLimit` Treffer gefunden wurden ODER
+  // - Bricht ab, sobald `scanMax` Mails inspiziert wurden (Cap gegen Endlossuche)
+  // - Beginnt beim neuesten Ende der Mailbox: In Mail.app ist message 1 die neueste Mail
+  const unreadCheck = unread_only ? `
+    try
+      if read status of m then set matches to false
+    on error
+      set matches to false
+    end try` : "";
 
-  // Ohne Filter nur die ersten N Mails holen statt Referenzen auf die ganze
-  // Mailbox – bei großen Postfächern sonst ein sicherer Timeout.
-  const selectMessages = filterCondition
-    ? `set allMessages to (messages of targetMailbox whose ${filterCondition})`
-    : `set msgTotal to count of messages of targetMailbox
-  if msgTotal > ${limit} then set msgTotal to ${limit}
-  if msgTotal > 0 then
-    set allMessages to messages 1 thru msgTotal of targetMailbox
-  else
-    set allMessages to {}
-  end if`;
+  const queryCheck = hasQuery ? `
+    if matches then
+      try
+        set tmpSubject to subject of m
+        set tmpSender to sender of m
+        if tmpSubject does not contain "${q}" and tmpSender does not contain "${q}" then
+          set matches to false
+        end if
+      on error
+        set matches to false
+      end try
+    end if` : "";
 
   return `tell application "Mail"
   set targetAccount to first account whose name is "${acc}"
   set targetMailbox to first mailbox of targetAccount whose name is "${mb}"
-  ${selectMessages}
+  set msgRefs to messages of targetMailbox
+  set msgCount to count of msgRefs
+  set fetchLimit to ${limit}
+  set scanMax to ${SEARCH_SCAN_MAX}
   set resultList to {}
-  set msgCount to count of allMessages
-  set fetchCount to ${limit}
-  if msgCount < fetchCount then set fetchCount to msgCount
-  repeat with i from 1 to fetchCount
-    set m to item i of allMessages
-    set msgId to id of m
-    set msgSubject to subject of m
-    set msgSender to sender of m
-    set msgDate to date sent of m as string
-    set msgRead to read status of m
-    set end of resultList to (msgId as string) & "|||" & msgSubject & "|||" & msgSender & "|||" & msgDate & "|||" & (msgRead as string)
+  set found to 0
+  set scanned to 0
+  set i to 1
+
+  repeat while found < fetchLimit and scanned < scanMax and i ≤ msgCount
+    set m to item i of msgRefs
+    set matches to true${unreadCheck}${queryCheck}
+    if matches then
+      try
+        set msgId to id of m
+        set msgSubject to subject of m
+        set msgSender to sender of m
+        set msgDate to date sent of m as string
+        set msgRead to read status of m
+        set end of resultList to (msgId as string) & "|||" & msgSubject & "|||" & msgSender & "|||" & msgDate & "|||" & (msgRead as string)
+        set found to found + 1
+      end try
+    end if
+    set i to i + 1
+    set scanned to scanned + 1
   end repeat
-  set AppleScript's text item delimiters to linefeed
-  set resultText to resultList as text
-  set AppleScript's text item delimiters to ""
-  return resultText
+
+  set AppleScript's text item delimiters to "${LIST_SEPARATOR}"
+  set joinedResult to resultList as string
+  set AppleScript's text item delimiters to {""}
+  return joinedResult
 end tell`;
 }
 

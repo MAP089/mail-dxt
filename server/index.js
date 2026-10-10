@@ -23,7 +23,9 @@ import {
   buildComposeDraft,
   buildMoveMessage,
   buildDeleteToTrash,
+  LIST_SEPARATOR,
 } from "./applescript.js";
+import { accountsCache, mailboxesCache } from "./cache.js";
 
 const server = new Server(
   { name: "mail-dxt", version: "1.0.0" },
@@ -131,18 +133,30 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     switch (tool) {
       case "mail_list_accounts": {
+        const cached = accountsCache.get("all");
+        if (cached) {
+          await writeAuditLog(tool, args, "cache_hit");
+          return { content: [{ type: "text", text: JSON.stringify({ accounts: cached }, null, 2) }] };
+        }
         const script = buildListAccounts();
         const raw = await runAppleScript(script);
-        const accounts = raw.split(/[\r\n]+/).map(s => s.trim()).filter(Boolean);
+        const accounts = raw.split(LIST_SEPARATOR).map(s => s.trim()).filter(Boolean);
+        accountsCache.set("all", accounts);
         result = { accounts };
         break;
       }
 
       case "mail_list_mailboxes": {
         validateAccountName(args.account_name);
+        const cached = mailboxesCache.get(args.account_name);
+        if (cached) {
+          await writeAuditLog(tool, args, "cache_hit");
+          return { content: [{ type: "text", text: JSON.stringify({ mailboxes: cached }, null, 2) }] };
+        }
         const script = buildListMailboxes(args.account_name);
         const raw = await runAppleScript(script);
-        const mailboxes = raw.split(/[\r\n]+/).map(s => s.trim()).filter(Boolean);
+        const mailboxes = raw.split(LIST_SEPARATOR).map(s => s.trim()).filter(Boolean);
+        mailboxesCache.set(args.account_name, mailboxes);
         result = { mailboxes };
         break;
       }
@@ -154,7 +168,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const unread_only = args.unread_only === true;
         const script = buildSearch(args.account_name, args.mailbox_name, args.query, unread_only, limit);
         const raw = await runAppleScript(script);
-        const lines = raw.split(/[\r\n]+/).map(s => s.trim()).filter(Boolean);
+        const lines = raw.split(LIST_SEPARATOR).map(s => s.trim()).filter(Boolean);
         const messages = lines.map(line => {
           const parts = line.split("|||");
           return {
@@ -198,7 +212,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           args.account_name, args.to, args.cc ?? [], args.bcc ?? [],
           args.subject, args.body
         );
-        const draftId = await runAppleScript(script);
+        const draftId = await runAppleScript(script, { retry: false });
         result = { status: "Entwurf erstellt", draft_id: draftId };
         break;
       }
@@ -209,7 +223,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         validateMailboxName(args.target_mailbox);
         validateMessageId(args.message_id);
         const script = buildMoveMessage(args.account_name, args.source_mailbox, args.message_id, args.target_mailbox);
-        await runAppleScript(script);
+        await runAppleScript(script, { retry: false });
         result = { status: "Mail verschoben" };
         break;
       }
@@ -219,7 +233,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         validateMailboxName(args.mailbox_name);
         validateMessageId(args.message_id);
         const script = buildDeleteToTrash(args.account_name, args.mailbox_name, args.message_id);
-        const trashMailbox = await runAppleScript(script);
+        const trashMailbox = await runAppleScript(script, { retry: false });
         result = { status: "Mail in Papierkorb verschoben", trash_mailbox: trashMailbox };
         break;
       }
