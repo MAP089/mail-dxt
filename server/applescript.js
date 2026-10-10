@@ -5,7 +5,6 @@ import {
   APPLESCRIPT_INNER_TIMEOUT_S,
   DEBUG,
   LIMITS,
-  TRASH_MAILBOX_NAMES,
   SEARCH_SCAN_MAX,
 } from "./config.js";
 import { writeAuditLog } from "./audit.js";
@@ -39,6 +38,19 @@ function sleep(ms) {
 // Eindeutiger Separator zwischen Listen-Items.
 // Wird im AppleScript via `text item delimiters` gesetzt und in Node zum Splitten genutzt.
 export const LIST_SEPARATOR = "|||ITEM|||";
+
+function errorHint(stderr, killed) {
+  if (killed) {
+    return ` – Abbruch nach ${OSASCRIPT_TIMEOUT_MS / 1000}s. Läuft Mail.app? Wartet ein macOS-Dialog (Automation-Berechtigung) auf Bestätigung?`;
+  }
+  if (stderr.includes("-1743")) {
+    return " – Keine Automation-Berechtigung: Systemeinstellungen → Datenschutz & Sicherheit → Automation → Claude → Mail aktivieren.";
+  }
+  if (stderr.includes("-1712")) {
+    return ` – Mail.app hat nicht innerhalb von ${APPLESCRIPT_INNER_TIMEOUT_S}s geantwortet.`;
+  }
+  return "";
+}
 
 const BLOCKED_PATTERNS = [
   /do\s+shell\s+script/i,
@@ -92,6 +104,8 @@ export async function runAppleScript(script, { retry = true } = {}) {
       });
       // Das async execFile ignoriert die `input`-Option (gibt es nur bei execFileSync) –
       // ohne explizites Schreiben auf stdin wartet osascript bis zum Timeout.
+      // EPIPE o.ä., falls osascript vorzeitig endet – der Fehler kommt über das Promise.
+      run.child.stdin.on("error", () => {});
       run.child.stdin.end(wrapped);
       const { stdout } = await run;
       return stdout.trim();
@@ -135,7 +149,7 @@ export async function runAppleScript(script, { retry = true } = {}) {
       const codeStr = code !== undefined ? ` (exit ${code})` : "";
       const sigStr = signal ? ` (signal ${signal})` : "";
       throw new Error(
-        `osascript failed${codeStr}${sigStr}${killedStr} after ${attempt} attempt(s): stderr="${stderr}" stdout="${stdout}"`
+        `osascript failed${codeStr}${sigStr}${killedStr} after ${attempt} attempt(s): stderr="${stderr}" stdout="${stdout}"${errorHint(stderr, killed)}`
       );
     }
   }
@@ -254,7 +268,10 @@ export function buildReadMessage(account_name, mailbox_name, message_id) {
   repeat with r in to recipients of m
     set end of msgRecipients to address of r
   end repeat
-  return msgSubject & "|||" & msgSender & "|||" & msgDate & "|||" & (msgRecipients as string) & "|||" & msgBody
+  set AppleScript's text item delimiters to ","
+  set recipientText to msgRecipients as text
+  set AppleScript's text item delimiters to ""
+  return msgSubject & "|||" & msgSender & "|||" & msgDate & "|||" & recipientText & "|||" & msgBody
 end tell`;
 }
 
@@ -263,27 +280,18 @@ export function buildComposeDraft(account_name, to, cc, bcc, subject, body) {
   const subj = escapeAppleScript(subject);
   const bodyText = escapeAppleScript(body);
 
-  const toList = to.map(e => `"${escapeAppleScript(e)}"`).join(", ");
+  // Jede Empfängerart braucht ihre eigene Klasse (to/cc/bcc recipient).
+  const recipientLines = (list, kind) =>
+    (list ?? []).map(e => `
+    make new ${kind} recipient at end of ${kind} recipients with properties {address:"${escapeAppleScript(e)}"}`).join("");
 
-  let ccBlock = "";
-  if (cc && cc.length > 0) {
-    ccBlock = cc.map(e => `
-    make new to recipient at end of cc recipients of newMsg with properties {address:"${escapeAppleScript(e)}"}`).join("");
-  }
-
-  let bccBlock = "";
-  if (bcc && bcc.length > 0) {
-    bccBlock = bcc.map(e => `
-    make new to recipient at end of bcc recipients of newMsg with properties {address:"${escapeAppleScript(e)}"}`).join("");
-  }
-
+  // Absender außerhalb von "tell newMsg" auflösen – dort würde "account"
+  // als Element der Nachricht gesucht. Konten haben "email addresses", kein "address".
   return `tell application "Mail"
-  set newMsg to make new outgoing message with properties {subject:"${subj}", content:"${bodyText}", visible:true}
-  tell newMsg
-    set sender to (address of first account whose name is "${acc}")
-    repeat with toAddr in {${toList}}
-      make new to recipient at end of to recipients with properties {address:toAddr}
-    end repeat${ccBlock}${bccBlock}
+  set senderAccount to first account whose name is "${acc}"
+  set senderAddress to first item of (email addresses of senderAccount)
+  set newMsg to make new outgoing message with properties {sender:senderAddress, subject:"${subj}", content:"${bodyText}", visible:true}
+  tell newMsg${recipientLines(to, "to")}${recipientLines(cc, "cc")}${recipientLines(bcc, "bcc")}
   end tell
   return id of newMsg as string
 end tell`;
@@ -303,23 +311,44 @@ export function buildMoveMessage(account_name, source_mailbox, message_id, targe
 end tell`;
 }
 
+// Der Papierkorb heißt je nach Anbieter und Sprache anders (iCloud: "Deleted
+// Messages", GMX: "Gelöscht", Exchange: "Gelöschte Elemente" …).
+const TRASH_MAILBOX_NAMES = [
+  "Trash",
+  "Papierkorb",
+  "Deleted Messages",
+  "Gelöschte Objekte",
+  "Deleted Items",
+  "Gelöschte Elemente",
+  "Gelöscht",
+  "Deleted",
+  "Bin",
+];
+
 export function buildDeleteToTrash(account_name, mailbox_name, message_id) {
   const acc = escapeAppleScript(account_name);
   const mb = escapeAppleScript(mailbox_name);
-  const candidates = TRASH_MAILBOX_NAMES.map(n => `"${escapeAppleScript(n)}"`).join(", ");
+  const trashNames = TRASH_MAILBOX_NAMES.map(n => `"${escapeAppleScript(n)}"`).join(", ");
+  const notFound = escapeAppleScript(
+    `Kein Papierkorb-Ordner im Konto gefunden (gesucht: ${TRASH_MAILBOX_NAMES.join(", ")}). ` +
+    `Ordner mit mail_list_mailboxes ermitteln und die Mail mit mail_move dorthin verschieben.`
+  );
+  // Bewusst kein Fallback auf "delete": je nach Kontoeinstellung löscht das endgültig.
   return `tell application "Mail"
   set targetAccount to first account whose name is "${acc}"
   set targetMailbox to first mailbox of targetAccount whose name is "${mb}"
   set m to first message of targetMailbox whose id is ${message_id}
   set trashMailbox to missing value
-  repeat with candidateName in {${candidates}}
-    try
-      set trashMailbox to first mailbox of targetAccount whose name is (candidateName as string)
+  repeat with trashName in {${trashNames}}
+    set wantedName to contents of trashName
+    set candidates to (mailboxes of targetAccount whose name is wantedName)
+    if (count of candidates) > 0 then
+      set trashMailbox to item 1 of candidates
       exit repeat
-    end try
+    end if
   end repeat
-  if trashMailbox is missing value then error "Papierkorb für dieses Konto nicht gefunden. Name über MAIL_DXT_TRASH_MAILBOX festlegen."
+  if trashMailbox is missing value then error "${notFound}"
   move m to trashMailbox
-  return "ok"
+  return name of trashMailbox
 end tell`;
 }

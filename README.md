@@ -25,6 +25,15 @@ Sichere Mail.app-Steuerung für Claude Desktop – als Desktop Extension (DXT) v
 - **Keine permanente Löschung:** Mails wandern höchstens in den Papierkorb und können von dort wiederhergestellt werden.
 - **Eingabevalidierung:** Alle Parameter (Konto, Mailbox, IDs) werden vor der Übergabe an osascript validiert.
 
+## Audit-Log
+
+Jeder Tool-Aufruf wird in `~/Library/Logs/mail-dxt/audit.log` protokolliert (auch in der Konsole-App sichtbar).
+
+- Protokolliert wird, **was** getan wurde – Konto, Mailbox, Message-ID, Empfänger, Suchbegriff. Mailtexte von Entwürfen erscheinen nur als Länge, Betreffs werden auf 100 Zeichen gekürzt; gelesene Mails werden nicht protokolliert.
+- Ordner und Datei sind nur für den eigenen Benutzer lesbar.
+- Ab 5 MB wird das Log nach `audit.log.1` rotiert.
+- `MAIL_DXT_DEBUG=1` (in `manifest.json`) schreibt zusätzlich die kompletten AppleScripts samt Inhalten mit – nur zur Fehlersuche einschalten.
+
 ## Installation
 
 1. `mail-control.dxt` selbst bauen (siehe [Build](#build)) – ein offizielles Release folgt später.
@@ -46,31 +55,21 @@ npm run build
 
 Erzeugt `mail-control.dxt` im Projektverzeichnis (das Build-Skript ruft `@anthropic-ai/dxt pack` auf). Hintergründe zum DXT-Format: <https://github.com/anthropics/dxt>.
 
-## Audit-Log
-
-Jeder Tool-Aufruf wird in `~/.mail-dxt-audit.log` protokolliert (eine JSON-Zeile pro Aufruf: Zeitpunkt, Tool, Parameter, Status).
-
-- `body` (Entwurfstext) und `query` (Suchbegriff) stehen **nicht** im Klartext im Log, nur ihre Länge (z. B. `<120 Zeichen>`). Betreff, Konto, Mailbox und Empfänger werden im Klartext protokolliert.
-- Die Datei wird mit den Rechten `600` angelegt (nur du kannst sie lesen). Für bereits vorhandene Logdateien ändert sich nichts.
-- Mit `MAIL_DXT_DEBUG=1` wird zusätzlich das vollständige AppleScript protokolliert, **einschließlich Entwurfstext und Suchbegriff**. Im mitgelieferten `manifest.json` ist der Schalter aus (`0`); nur zur Fehlersuche einschalten.
-- Die Datei wird nie rotiert oder gekürzt. Bei Bedarf manuell löschen.
-
 ## Konfiguration
 
-Umgebungsvariablen (im `manifest.json` unter `mcp_config.env`):
+Umgebungsvariablen (im `manifest.json` unter `mcp_config.env` oder in der Umgebung des Servers):
 
-| Variable | Wirkung |
-|---|---|
-| `MAIL_DXT_OSASCRIPT_TIMEOUT_MS` | Timeout für `osascript` in Millisekunden |
-| `MAIL_DXT_APPLESCRIPT_TIMEOUT_S` | Timeout innerhalb des AppleScripts in Sekunden |
-| `MAIL_DXT_DEBUG` | `1` protokolliert zusätzlich das vollständige AppleScript (siehe Audit-Log) |
-| `MAIL_DXT_TRASH_MAILBOX` | Name des Papierkorbs, falls er bei deinem Konto anders heißt |
-| `MAIL_DXT_SEARCH_SCAN_MAX` | Maximale Zahl Mails, die `mail_search` pro Aufruf durchsieht (Standard 2000) |
-| `MAIL_DXT_CACHE_TTL_MS` | Wie lange Konto- und Postfachlisten zwischengespeichert werden (Standard 60000) |
-| `MAIL_DXT_MAX_RETRIES` | Versuche bei vorübergehenden Mail.app-Fehlern, nur für lesende Aufrufe (Standard 3) |
-| `MAIL_DXT_RETRY_BASE_DELAY_MS` | Wartezeit vor dem ersten Wiederholungsversuch, verdoppelt sich je Versuch (Standard 1000) |
+| Variable | Standard | Wirkung |
+|---|---|---|
+| `MAIL_DXT_OSASCRIPT_TIMEOUT_MS` | 50000 | Timeout für `osascript` in Millisekunden |
+| `MAIL_DXT_APPLESCRIPT_TIMEOUT_S` | 40 | Timeout innerhalb des AppleScripts in Sekunden |
+| `MAIL_DXT_DEBUG` | aus | `1` schreibt zusätzlich die vollständigen AppleScripts ins Audit-Log (siehe oben) |
+| `MAIL_DXT_SEARCH_SCAN_MAX` | 2000 | Maximale Zahl Mails, die `mail_search` pro Aufruf durchsieht |
+| `MAIL_DXT_CACHE_TTL_MS` | 60000 | Wie lange Konto- und Postfachlisten zwischengespeichert werden |
+| `MAIL_DXT_MAX_RETRIES` | 3 | Versuche bei vorübergehenden Mail.app-Fehlern (nur lesende Aufrufe) |
+| `MAIL_DXT_RETRY_BASE_DELAY_MS` | 1000 | Wartezeit vor dem ersten Wiederholungsversuch, verdoppelt sich je Versuch |
 
-`mail_delete_to_trash` sucht den Papierkorb des Kontos der Reihe nach unter `Trash`, `Deleted Messages`, `Deleted Items`, `Papierkorb`, `Gelöschte Objekte`, `Gelöschte Elemente`, `[Gmail]/Trash` und `[Google Mail]/Papierkorb`. Wird keiner gefunden, bricht der Aufruf mit einer Fehlermeldung ab, die Mail wird dann nicht verschoben.
+Beide Timeouts müssen unter den 60 Sekunden liegen, nach denen Claude Desktop einen Tool-Aufruf abbricht.
 
 ## Tests
 
@@ -78,7 +77,7 @@ Umgebungsvariablen (im `manifest.json` unter `mcp_config.env`):
 npm test
 ```
 
-Die Tests prüfen das erzeugte AppleScript (Escaping, Sicherheitsfilter, Papierkorb-Namen) und das Audit-Log. Sie führen kein `osascript` aus und laufen daher auch ohne macOS.
+Die Tests prüfen das erzeugte AppleScript (Escaping, Sicherheitsfilter, Papierkorb-Suche) und das Audit-Log (Schwärzung, Rechte, Rotation). Sie führen kein `osascript` aus und laufen daher auch ohne macOS.
 
 ## Lizenz
 

@@ -190,7 +190,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const script = buildReadMessage(args.account_name, args.mailbox_name, args.message_id);
         const raw = await runAppleScript(script);
         const parts = raw.split("|||");
-        const body = (parts[4] ?? "").slice(0, LIMITS.body_read_max_length);
+        const body = parts.slice(4).join("|||").slice(0, LIMITS.body_read_max_length);
         result = {
           subject: parts[0] ?? "",
           sender: parts[1] ?? "",
@@ -233,8 +233,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         validateMailboxName(args.mailbox_name);
         validateMessageId(args.message_id);
         const script = buildDeleteToTrash(args.account_name, args.mailbox_name, args.message_id);
-        await runAppleScript(script, { retry: false });
-        result = { status: "Mail in Papierkorb verschoben" };
+        const trashMailbox = await runAppleScript(script, { retry: false });
+        result = { status: "Mail in Papierkorb verschoben", trash_mailbox: trashMailbox };
         break;
       }
 
