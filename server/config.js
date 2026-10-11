@@ -37,3 +37,21 @@ export const AUDIT = {
   max_bytes: 5 * 1024 * 1024, // danach wird nach audit.log.1 rotiert
   subject_max_length: 100,
 };
+
+// Mögliche Namen des Papierkorbs je Konto, in dieser Reihenfolge probiert.
+// AppleScript sieht die Ordner pro Konto (nicht "Papierkorb (alle)" aus der Seitenleiste),
+// und deren Name hängt von Anbieter und Sprache ab (iCloud: "Deleted Messages",
+// GMX: "Gelöscht", Exchange: "Gelöschte Elemente" …).
+// "Deleted Messages" zuerst: Mail.app legt den Ordner selbst an und nutzt ihn auch dann,
+// wenn ein anderer Client daneben noch einen "Papierkorb" angelegt hat.
+export const TRASH_MAILBOX_NAMES = [
+  "Deleted Messages",
+  "Papierkorb",
+  "Trash",
+  "Gelöschte Objekte",
+  "Gelöschte Elemente",
+  "Deleted Items",
+  "Gelöscht",
+  "Deleted",
+  "Bin",
+];

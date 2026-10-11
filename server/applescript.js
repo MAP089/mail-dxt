@@ -6,6 +6,7 @@ import {
   DEBUG,
   LIMITS,
   SEARCH_SCAN_MAX,
+  TRASH_MAILBOX_NAMES,
 } from "./config.js";
 import { writeAuditLog } from "./audit.js";
 
@@ -311,20 +312,6 @@ export function buildMoveMessage(account_name, source_mailbox, message_id, targe
 end tell`;
 }
 
-// Der Papierkorb heißt je nach Anbieter und Sprache anders (iCloud: "Deleted
-// Messages", GMX: "Gelöscht", Exchange: "Gelöschte Elemente" …).
-const TRASH_MAILBOX_NAMES = [
-  "Trash",
-  "Papierkorb",
-  "Deleted Messages",
-  "Gelöschte Objekte",
-  "Deleted Items",
-  "Gelöschte Elemente",
-  "Gelöscht",
-  "Deleted",
-  "Bin",
-];
-
 export function buildDeleteToTrash(account_name, mailbox_name, message_id) {
   const acc = escapeAppleScript(account_name);
   const mb = escapeAppleScript(mailbox_name);
@@ -334,10 +321,9 @@ export function buildDeleteToTrash(account_name, mailbox_name, message_id) {
     `Ordner mit mail_list_mailboxes ermitteln und die Mail mit mail_move dorthin verschieben.`
   );
   // Bewusst kein Fallback auf "delete": je nach Kontoeinstellung löscht das endgültig.
+  // Papierkorb zuerst suchen: Wird keiner gefunden, bricht das Script ab, bevor die Mail angefasst wird.
   return `tell application "Mail"
   set targetAccount to first account whose name is "${acc}"
-  set targetMailbox to first mailbox of targetAccount whose name is "${mb}"
-  set m to first message of targetMailbox whose id is ${message_id}
   set trashMailbox to missing value
   repeat with trashName in {${trashNames}}
     set wantedName to contents of trashName
@@ -348,6 +334,8 @@ export function buildDeleteToTrash(account_name, mailbox_name, message_id) {
     end if
   end repeat
   if trashMailbox is missing value then error "${notFound}"
+  set targetMailbox to first mailbox of targetAccount whose name is "${mb}"
+  set m to first message of targetMailbox whose id is ${message_id}
   move m to trashMailbox
   return name of trashMailbox
 end tell`;
