@@ -209,9 +209,12 @@ export function buildSearch(account_name, mailbox_name, query, unread_only, limi
       try
         set tmpSubject to subject of m
         set tmpSender to sender of m
-        if tmpSubject does not contain "${q}" and tmpSender does not contain "${q}" then
-          set matches to false
-        end if
+        -- "celine" soll auch "Céline" finden (Groß-/Kleinschreibung ignoriert AppleScript ohnehin)
+        ignoring diacriticals
+          if tmpSubject does not contain "${q}" and tmpSender does not contain "${q}" then
+            set matches to false
+          end if
+        end ignoring
       on error
         set matches to false
       end try
