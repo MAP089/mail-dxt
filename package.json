@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node server/index.js",
-    "build": "npx --yes @anthropic-ai/dxt pack . mail-control.dxt",
-    "test": "node --test"
+    "test": "node --test test/*.test.js",
+    "build": "npx --yes @anthropic-ai/dxt pack . mail-control.dxt"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0"
