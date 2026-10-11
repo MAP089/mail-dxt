@@ -36,7 +36,7 @@ Jeder Tool-Aufruf wird in `~/Library/Logs/mail-dxt/audit.log` protokolliert (auc
 
 ## Installation
 
-1. `mail-dxt.dxt` selbst bauen (siehe [Build](#build)) – ein offizielles Release folgt später.
+1. `mail-control.dxt` selbst bauen (siehe [Build](#build)) – ein offizielles Release folgt später.
 2. Datei per Drag-and-Drop in Claude Desktop ziehen oder über *Settings → Extensions* installieren.
 3. Beim ersten Aufruf fragt macOS nach der Automation-Berechtigung für Mail.app – einmal bestätigen.
 
@@ -50,10 +50,34 @@ Jeder Tool-Aufruf wird in `~/Library/Logs/mail-dxt/audit.log` protokolliert (auc
 
 ```bash
 npm install
-dxt pack
+npm run build
 ```
 
-Erzeugt `mail-dxt.dxt` im Projektverzeichnis. Setup-Anleitung für das `dxt`-CLI: <https://github.com/anthropics/dxt>.
+Erzeugt `mail-control.dxt` im Projektverzeichnis (das Build-Skript ruft `@anthropic-ai/dxt pack` auf). Hintergründe zum DXT-Format: <https://github.com/anthropics/dxt>.
+
+## Konfiguration
+
+Umgebungsvariablen (im `manifest.json` unter `mcp_config.env` oder in der Umgebung des Servers):
+
+| Variable | Standard | Wirkung |
+|---|---|---|
+| `MAIL_DXT_OSASCRIPT_TIMEOUT_MS` | 50000 | Timeout für `osascript` in Millisekunden |
+| `MAIL_DXT_APPLESCRIPT_TIMEOUT_S` | 40 | Timeout innerhalb des AppleScripts in Sekunden |
+| `MAIL_DXT_DEBUG` | aus | `1` schreibt zusätzlich die vollständigen AppleScripts ins Audit-Log (siehe oben) |
+| `MAIL_DXT_SEARCH_SCAN_MAX` | 2000 | Maximale Zahl Mails, die `mail_search` pro Aufruf durchsieht |
+| `MAIL_DXT_CACHE_TTL_MS` | 60000 | Wie lange Konto- und Postfachlisten zwischengespeichert werden |
+| `MAIL_DXT_MAX_RETRIES` | 3 | Versuche bei vorübergehenden Mail.app-Fehlern (nur lesende Aufrufe) |
+| `MAIL_DXT_RETRY_BASE_DELAY_MS` | 1000 | Wartezeit vor dem ersten Wiederholungsversuch, verdoppelt sich je Versuch |
+
+Beide Timeouts müssen unter den 60 Sekunden liegen, nach denen Claude Desktop einen Tool-Aufruf abbricht.
+
+## Tests
+
+```bash
+npm test
+```
+
+Die Tests prüfen das erzeugte AppleScript (Escaping, Sicherheitsfilter, Papierkorb-Suche) und das Audit-Log (Schwärzung, Rechte, Rotation). Sie führen kein `osascript` aus und laufen daher auch ohne macOS.
 
 ## Lizenz
 

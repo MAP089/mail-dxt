@@ -62,7 +62,7 @@ function escapeAppleScript(s) {
   return String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
-function validateScript(script) {
+export function validateScript(script) {
   for (const pattern of BLOCKED_PATTERNS) {
     if (pattern.test(script)) {
       throw new Error(`Verbotenes Muster im AppleScript gefunden: ${pattern}`);
