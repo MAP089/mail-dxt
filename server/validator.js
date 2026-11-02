@@ -28,8 +28,8 @@ export function validateMessageIds(message_ids) {
   if (!Array.isArray(message_ids) || message_ids.length === 0) {
     throw new Error("message_ids muss ein nicht-leeres Array von IDs sein.");
   }
-  if (message_ids.length > LIMITS.trash_batch_max) {
-    throw new Error(`message_ids darf maximal ${LIMITS.trash_batch_max} IDs enthalten.`);
+  if (message_ids.length > LIMITS.move_batch_max) {
+    throw new Error(`message_ids darf maximal ${LIMITS.move_batch_max} IDs enthalten.`);
   }
   for (const id of message_ids) {
     validateMessageId(id);

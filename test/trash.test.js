@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildDeleteToTrash } from "../server/applescript.js";
+import { buildDeleteToTrash, buildMoveMessage } from "../server/applescript.js";
 import { TRASH_MAILBOX_NAMES, LIMITS } from "../server/config.js";
 import { validateMessageId, validateMessageIds, validateMailboxName, validateAccountName } from "../server/validator.js";
 
@@ -53,8 +53,24 @@ test("mehrere Mails in einem Script, Papierkorb nur einmal gesucht", () => {
   assert.equal(script.split("first mailbox of targetAccount").length - 1, 1);
 });
 
+test("mail_move: mehrere Mails in einem Script, Mailboxen nur einmal aufgelöst", () => {
+  const script = buildMoveMessage("iCloud", "INBOX", [7, 8], "Archiv");
+  assertCompiles(script);
+  assert.match(script, /repeat with idRef in \{7, 8\}/);
+  assert.ok(script.includes("first message of srcMailbox whose id is wantedId"));
+  assert.ok(script.includes("move m to tgtMailbox"));
+  assert.equal(script.split("first mailbox of targetAccount").length - 1, 2);
+  assert.doesNotMatch(script, /\bdelete\b/);
+});
+
+test("mail_move: Escaping der Mailbox-Namen", () => {
+  const script = buildMoveMessage("iCloud", 'Box"x', 1, 'Ziel\\"y');
+  assert.match(script, /name is "Box\\"x"/);
+  assertCompiles(script);
+});
+
 test("message_ids-Validierung", () => {
-  for (const bad of [[], "1,2", [1, "2"], [1, 0], null, Array(LIMITS.trash_batch_max + 1).fill(1)]) {
+  for (const bad of [[], "1,2", [1, "2"], [1, 0], null, Array(LIMITS.move_batch_max + 1).fill(1)]) {
     assert.throws(() => validateMessageIds(bad), String(bad));
   }
   assert.deepEqual(validateMessageIds([3, 1, 3]), [3, 1]);

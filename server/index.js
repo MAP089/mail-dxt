@@ -97,23 +97,31 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "mail_move",
-      description: "Verschiebt eine Mail in eine andere Mailbox.",
+      description:
+        "Verschiebt eine oder mehrere Mails von einer Mailbox in eine andere desselben Kontos. " +
+        `Mehrere Mails IMMER gesammelt über message_ids (max. ${LIMITS.move_batch_max}) in einem Aufruf übergeben, ` +
+        "nicht das Tool pro Mail einzeln aufrufen.",
       inputSchema: {
         type: "object",
         properties: {
           account_name: { type: "string" },
           source_mailbox: { type: "string" },
-          message_id: { type: "number" },
+          message_ids: {
+            type: "array",
+            items: { type: "number" },
+            description: `IDs der Mails (aus mail_search), max. ${LIMITS.move_batch_max}`,
+          },
+          message_id: { type: "number", description: "Einzelne ID – nur noch aus Kompatibilitätsgründen, besser message_ids" },
           target_mailbox: { type: "string" },
         },
-        required: ["account_name", "source_mailbox", "message_id", "target_mailbox"],
+        required: ["account_name", "source_mailbox", "target_mailbox"],
       },
     },
     {
       name: "mail_delete_to_trash",
       description:
         "Verschiebt eine oder mehrere Mails derselben Mailbox in den Papierkorb. Löscht NIEMALS permanent. " +
-        `Mehrere Mails IMMER gesammelt über message_ids (max. ${LIMITS.trash_batch_max}) in einem Aufruf übergeben, ` +
+        `Mehrere Mails IMMER gesammelt über message_ids (max. ${LIMITS.move_batch_max}) in einem Aufruf übergeben, ` +
         "nicht das Tool pro Mail einzeln aufrufen.",
       inputSchema: {
         type: "object",
@@ -123,7 +131,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           message_ids: {
             type: "array",
             items: { type: "number" },
-            description: `IDs der Mails (aus mail_search), max. ${LIMITS.trash_batch_max}`,
+            description: `IDs der Mails (aus mail_search), max. ${LIMITS.move_batch_max}`,
           },
           message_id: { type: "number", description: "Einzelne ID – nur noch aus Kompatibilitätsgründen, besser message_ids" },
         },
@@ -132,6 +140,23 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
   ],
 }));
+
+// message_ids (Liste) oder – aus Kompatibilitätsgründen – eine einzelne message_id.
+function messageIdsFromArgs(args) {
+  return validateMessageIds(args.message_ids ?? (args.message_id === undefined ? [] : [args.message_id]));
+}
+
+// Wertet die Rückgabe von buildMoveMessage/buildDeleteToTrash aus.
+function parseMoveResult(raw) {
+  const [target, movedRaw = "", failedRaw = ""] = raw.split("|||");
+  const parseIds = (s) => s.split(",").map(x => x.trim()).filter(Boolean).map(Number);
+  const moved = parseIds(movedRaw);
+  const notMoved = parseIds(failedRaw);
+  if (moved.length === 0) {
+    throw new Error(`Keine der Mails gefunden bzw. verschiebbar (IDs: ${notMoved.join(", ")}).`);
+  }
+  return { target, moved, notMoved };
+}
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const tool = request.params.name;
@@ -230,29 +255,27 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         validateAccountName(args.account_name);
         validateMailboxName(args.source_mailbox);
         validateMailboxName(args.target_mailbox);
-        validateMessageId(args.message_id);
-        const script = buildMoveMessage(args.account_name, args.source_mailbox, args.message_id, args.target_mailbox);
-        await runAppleScript(script, { retry: false });
-        result = { status: "Mail verschoben" };
+        const ids = messageIdsFromArgs(args);
+        const script = buildMoveMessage(args.account_name, args.source_mailbox, ids, args.target_mailbox);
+        const { target, moved, notMoved } = parseMoveResult(await runAppleScript(script, { retry: false }));
+        result = {
+          status: `${moved.length} Mail(s) verschoben`,
+          target_mailbox: target,
+          moved_ids: moved,
+          ...(notMoved.length ? { not_moved_ids: notMoved } : {}),
+        };
         break;
       }
 
       case "mail_delete_to_trash": {
         validateAccountName(args.account_name);
         validateMailboxName(args.mailbox_name);
-        const ids = validateMessageIds(args.message_ids ?? (args.message_id === undefined ? [] : [args.message_id]));
+        const ids = messageIdsFromArgs(args);
         const script = buildDeleteToTrash(args.account_name, args.mailbox_name, ids);
-        const raw = await runAppleScript(script, { retry: false });
-        const [trashMailbox, movedRaw = "", failedRaw = ""] = raw.split("|||");
-        const parseIds = (s) => s.split(",").map(x => x.trim()).filter(Boolean).map(Number);
-        const moved = parseIds(movedRaw);
-        const notMoved = parseIds(failedRaw);
-        if (moved.length === 0) {
-          throw new Error(`Keine der Mails gefunden bzw. verschiebbar (IDs: ${notMoved.join(", ")}).`);
-        }
+        const { target, moved, notMoved } = parseMoveResult(await runAppleScript(script, { retry: false }));
         result = {
           status: `${moved.length} Mail(s) in Papierkorb verschoben`,
-          trash_mailbox: trashMailbox,
+          trash_mailbox: target,
           moved_ids: moved,
           ...(notMoved.length ? { not_moved_ids: notMoved } : {}),
         };

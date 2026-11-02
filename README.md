@@ -15,7 +15,7 @@ Sichere Mail.app-Steuerung für Claude Desktop – als Desktop Extension (DXT) v
 | `mail_search` | Mails in einer Mailbox suchen |
 | `mail_read` | Eine einzelne Mail lesen |
 | `mail_compose_draft` | Entwurf erstellen (kein automatisches Senden) |
-| `mail_move` | Mail in eine andere Mailbox verschieben |
+| `mail_move` | Eine oder mehrere Mails (bis 100 auf einmal) in eine andere Mailbox verschieben |
 | `mail_delete_to_trash` | Eine oder mehrere Mails (bis 100 auf einmal) in den Papierkorb verschieben (nicht permanent) |
 
 ## Sicherheitsmodell

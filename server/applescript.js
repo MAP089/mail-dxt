@@ -301,28 +301,49 @@ export function buildComposeDraft(account_name, to, cc, bcc, subject, body) {
 end tell`;
 }
 
-export function buildMoveMessage(account_name, source_mailbox, message_id, target_mailbox) {
+// Verschiebt alle message_ids aus srcVar nach tgtVar (beides AppleScript-Variablen) und gibt
+// "<Name von tgtVar>|||<verschobene IDs>|||<nicht verschobene IDs>" zurück (IDs kommagetrennt).
+// Fehler pro Mail werden gesammelt statt abzubrechen – sonst wüsste der Aufrufer nicht,
+// welche Mails schon verschoben sind.
+function moveMessagesAndReport(srcVar, tgtVar, message_ids) {
+  // IDs sind validierte Ganzzahlen – Number() stellt sicher, dass nur Zahlen ins Script gelangen.
+  const ids = [].concat(message_ids).map(Number).join(", ");
+  return `
+  set movedIds to {}
+  set failedIds to {}
+  repeat with idRef in {${ids}}
+    set wantedId to contents of idRef
+    try
+      set m to first message of ${srcVar} whose id is wantedId
+      move m to ${tgtVar}
+      set end of movedIds to wantedId
+    on error
+      set end of failedIds to wantedId
+    end try
+  end repeat
+  set AppleScript's text item delimiters to ","
+  set resultText to (name of ${tgtVar}) & "|||" & (movedIds as string) & "|||" & (failedIds as string)
+  set AppleScript's text item delimiters to {""}
+  return resultText`;
+}
+
+// message_ids: eine ID oder ein Array von IDs, alle in einem osascript-Aufruf.
+export function buildMoveMessage(account_name, source_mailbox, message_ids, target_mailbox) {
   const acc = escapeAppleScript(account_name);
   const src = escapeAppleScript(source_mailbox);
   const tgt = escapeAppleScript(target_mailbox);
   return `tell application "Mail"
   set targetAccount to first account whose name is "${acc}"
   set srcMailbox to first mailbox of targetAccount whose name is "${src}"
-  set tgtMailbox to first mailbox of targetAccount whose name is "${tgt}"
-  set m to first message of srcMailbox whose id is ${message_id}
-  move m to tgtMailbox
-  return "ok"
+  set tgtMailbox to first mailbox of targetAccount whose name is "${tgt}"${moveMessagesAndReport("srcMailbox", "tgtMailbox", message_ids)}
 end tell`;
 }
 
 // message_ids: eine ID oder ein Array von IDs. Alles läuft in einem einzigen osascript-Aufruf,
 // Konto, Papierkorb und Quell-Mailbox werden nur einmal aufgelöst.
-// Rückgabe: "<Papierkorb>|||<verschobene IDs>|||<nicht verschobene IDs>" (IDs kommagetrennt).
 export function buildDeleteToTrash(account_name, mailbox_name, message_ids) {
   const acc = escapeAppleScript(account_name);
   const mb = escapeAppleScript(mailbox_name);
-  // IDs sind validierte Ganzzahlen – Number() stellt sicher, dass nur Zahlen ins Script gelangen.
-  const ids = [].concat(message_ids).map(Number).join(", ");
   const trashNames = TRASH_MAILBOX_NAMES.map(n => `"${escapeAppleScript(n)}"`).join(", ");
   const notFound = escapeAppleScript(
     `Kein Papierkorb-Ordner im Konto gefunden (gesucht: ${TRASH_MAILBOX_NAMES.join(", ")}). ` +
@@ -330,8 +351,6 @@ export function buildDeleteToTrash(account_name, mailbox_name, message_ids) {
   );
   // Bewusst kein Fallback auf "delete": je nach Kontoeinstellung löscht das endgültig.
   // Papierkorb zuerst suchen: Wird keiner gefunden, bricht das Script ab, bevor eine Mail angefasst wird.
-  // Fehler pro Mail werden gesammelt statt abzubrechen – sonst wüsste der Aufrufer nicht,
-  // welche Mails schon verschoben sind.
   return `tell application "Mail"
   set targetAccount to first account whose name is "${acc}"
   set trashMailbox to missing value
@@ -344,22 +363,6 @@ export function buildDeleteToTrash(account_name, mailbox_name, message_ids) {
     end if
   end repeat
   if trashMailbox is missing value then error "${notFound}"
-  set targetMailbox to first mailbox of targetAccount whose name is "${mb}"
-  set movedIds to {}
-  set failedIds to {}
-  repeat with idRef in {${ids}}
-    set wantedId to contents of idRef
-    try
-      set m to first message of targetMailbox whose id is wantedId
-      move m to trashMailbox
-      set end of movedIds to wantedId
-    on error
-      set end of failedIds to wantedId
-    end try
-  end repeat
-  set AppleScript's text item delimiters to ","
-  set resultText to (name of trashMailbox) & "|||" & (movedIds as string) & "|||" & (failedIds as string)
-  set AppleScript's text item delimiters to {""}
-  return resultText
+  set targetMailbox to first mailbox of targetAccount whose name is "${mb}"${moveMessagesAndReport("targetMailbox", "trashMailbox", message_ids)}
 end tell`;
 }
