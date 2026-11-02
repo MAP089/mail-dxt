@@ -146,12 +146,13 @@ function messageIdsFromArgs(args) {
   return validateMessageIds(args.message_ids ?? (args.message_id === undefined ? [] : [args.message_id]));
 }
 
-// Wertet die Rückgabe von buildMoveMessage/buildDeleteToTrash aus.
-function parseMoveResult(raw) {
+// Wertet die Rückgabe von buildMoveMessage/buildDeleteToTrash aus: Das Script meldet
+// Positionen in ids zurück, nicht die IDs selbst.
+function parseMoveResult(raw, ids) {
   const [target, movedRaw = "", failedRaw = ""] = raw.split("|||");
-  const parseIds = (s) => s.split(",").map(x => x.trim()).filter(Boolean).map(Number);
-  const moved = parseIds(movedRaw);
-  const notMoved = parseIds(failedRaw);
+  const toIds = (s) => s.split(",").map(x => x.trim()).filter(Boolean).map(i => ids[Number(i) - 1]);
+  const moved = toIds(movedRaw);
+  const notMoved = toIds(failedRaw);
   if (moved.length === 0) {
     throw new Error(`Keine der Mails gefunden bzw. verschiebbar (IDs: ${notMoved.join(", ")}).`);
   }
@@ -257,7 +258,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         validateMailboxName(args.target_mailbox);
         const ids = messageIdsFromArgs(args);
         const script = buildMoveMessage(args.account_name, args.source_mailbox, ids, args.target_mailbox);
-        const { target, moved, notMoved } = parseMoveResult(await runAppleScript(script, { retry: false }));
+        const { target, moved, notMoved } = parseMoveResult(await runAppleScript(script, { retry: false }), ids);
         result = {
           status: `${moved.length} Mail(s) verschoben`,
           target_mailbox: target,
@@ -272,7 +273,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         validateMailboxName(args.mailbox_name);
         const ids = messageIdsFromArgs(args);
         const script = buildDeleteToTrash(args.account_name, args.mailbox_name, ids);
-        const { target, moved, notMoved } = parseMoveResult(await runAppleScript(script, { retry: false }));
+        const { target, moved, notMoved } = parseMoveResult(await runAppleScript(script, { retry: false }), ids);
         result = {
           status: `${moved.length} Mail(s) in Papierkorb verschoben`,
           trash_mailbox: target,

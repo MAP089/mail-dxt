@@ -302,27 +302,31 @@ end tell`;
 }
 
 // Verschiebt alle message_ids aus srcVar nach tgtVar (beides AppleScript-Variablen) und gibt
-// "<Name von tgtVar>|||<verschobene IDs>|||<nicht verschobene IDs>" zurück (IDs kommagetrennt).
+// "<Name von tgtVar>|||<verschobene Positionen>|||<nicht verschobene Positionen>" zurück
+// (1-basierte Positionen in message_ids, kommagetrennt; siehe parseMoveResult in index.js).
+// Positionen statt IDs: IDs über 2^29 sind in AppleScript Kommazahlen und kämen als
+// "9,99999991E+8" zurück (deutsches Dezimalkomma).
 // Fehler pro Mail werden gesammelt statt abzubrechen – sonst wüsste der Aufrufer nicht,
 // welche Mails schon verschoben sind.
 function moveMessagesAndReport(srcVar, tgtVar, message_ids) {
   // IDs sind validierte Ganzzahlen – Number() stellt sicher, dass nur Zahlen ins Script gelangen.
   const ids = [].concat(message_ids).map(Number).join(", ");
   return `
-  set movedIds to {}
-  set failedIds to {}
-  repeat with idRef in {${ids}}
-    set wantedId to contents of idRef
+  set wantedIds to {${ids}}
+  set movedIdx to {}
+  set failedIdx to {}
+  repeat with idx from 1 to count of wantedIds
+    set wantedId to item idx of wantedIds
     try
       set m to first message of ${srcVar} whose id is wantedId
       move m to ${tgtVar}
-      set end of movedIds to wantedId
+      set end of movedIdx to idx
     on error
-      set end of failedIds to wantedId
+      set end of failedIdx to idx
     end try
   end repeat
   set AppleScript's text item delimiters to ","
-  set resultText to (name of ${tgtVar}) & "|||" & (movedIds as string) & "|||" & (failedIds as string)
+  set resultText to (name of ${tgtVar}) & "|||" & (movedIdx as string) & "|||" & (failedIdx as string)
   set AppleScript's text item delimiters to {""}
   return resultText`;
 }

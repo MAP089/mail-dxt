@@ -8,7 +8,7 @@ test("Papierkorb: übliche Namen (u. a. deutsch) werden gesucht", () => {
   for (const name of ["Trash", "Papierkorb", "Gelöschte Objekte", "Deleted Messages"]) {
     assert.ok(script.includes(`"${name}"`), `${name} fehlt im Skript`);
   }
-  assert.ok(script.includes("repeat with idRef in {42}"));
+  assert.ok(script.includes("set wantedIds to {42}"));
   assert.ok(script.includes("first message of targetMailbox whose id is wantedId"));
 });
 

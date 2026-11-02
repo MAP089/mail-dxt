@@ -48,7 +48,7 @@ test("kein permanentes delete im Script", () => {
 test("mehrere Mails in einem Script, Papierkorb nur einmal gesucht", () => {
   const script = buildDeleteToTrash("iCloud", "INBOX", [42, 43, 44]);
   assertCompiles(script);
-  assert.match(script, /repeat with idRef in \{42, 43, 44\}/);
+  assert.match(script, /set wantedIds to \{42, 43, 44\}/);
   assert.equal(script.split("repeat with trashName").length - 1, 1);
   assert.equal(script.split("first mailbox of targetAccount").length - 1, 1);
 });
@@ -56,7 +56,7 @@ test("mehrere Mails in einem Script, Papierkorb nur einmal gesucht", () => {
 test("mail_move: mehrere Mails in einem Script, Mailboxen nur einmal aufgelöst", () => {
   const script = buildMoveMessage("iCloud", "INBOX", [7, 8], "Archiv");
   assertCompiles(script);
-  assert.match(script, /repeat with idRef in \{7, 8\}/);
+  assert.match(script, /set wantedIds to \{7, 8\}/);
   assert.ok(script.includes("first message of srcMailbox whose id is wantedId"));
   assert.ok(script.includes("move m to tgtMailbox"));
   assert.equal(script.split("first mailbox of targetAccount").length - 1, 2);
