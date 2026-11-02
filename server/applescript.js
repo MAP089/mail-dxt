@@ -301,21 +301,51 @@ export function buildComposeDraft(account_name, to, cc, bcc, subject, body) {
 end tell`;
 }
 
-export function buildMoveMessage(account_name, source_mailbox, message_id, target_mailbox) {
+// Verschiebt alle message_ids aus srcVar nach tgtVar (beides AppleScript-Variablen) und gibt
+// "<Name von tgtVar>|||<verschobene Positionen>|||<nicht verschobene Positionen>" zurück
+// (1-basierte Positionen in message_ids, kommagetrennt; siehe parseMoveResult in index.js).
+// Positionen statt IDs: IDs über 2^29 sind in AppleScript Kommazahlen und kämen als
+// "9,99999991E+8" zurück (deutsches Dezimalkomma).
+// Fehler pro Mail werden gesammelt statt abzubrechen – sonst wüsste der Aufrufer nicht,
+// welche Mails schon verschoben sind.
+function moveMessagesAndReport(srcVar, tgtVar, message_ids) {
+  // IDs sind validierte Ganzzahlen – Number() stellt sicher, dass nur Zahlen ins Script gelangen.
+  const ids = [].concat(message_ids).map(Number).join(", ");
+  return `
+  set wantedIds to {${ids}}
+  set movedIdx to {}
+  set failedIdx to {}
+  repeat with idx from 1 to count of wantedIds
+    set wantedId to item idx of wantedIds
+    try
+      set m to first message of ${srcVar} whose id is wantedId
+      move m to ${tgtVar}
+      set end of movedIdx to idx
+    on error
+      set end of failedIdx to idx
+    end try
+  end repeat
+  set AppleScript's text item delimiters to ","
+  set resultText to (name of ${tgtVar}) & "|||" & (movedIdx as string) & "|||" & (failedIdx as string)
+  set AppleScript's text item delimiters to {""}
+  return resultText`;
+}
+
+// message_ids: eine ID oder ein Array von IDs, alle in einem osascript-Aufruf.
+export function buildMoveMessage(account_name, source_mailbox, message_ids, target_mailbox) {
   const acc = escapeAppleScript(account_name);
   const src = escapeAppleScript(source_mailbox);
   const tgt = escapeAppleScript(target_mailbox);
   return `tell application "Mail"
   set targetAccount to first account whose name is "${acc}"
   set srcMailbox to first mailbox of targetAccount whose name is "${src}"
-  set tgtMailbox to first mailbox of targetAccount whose name is "${tgt}"
-  set m to first message of srcMailbox whose id is ${message_id}
-  move m to tgtMailbox
-  return "ok"
+  set tgtMailbox to first mailbox of targetAccount whose name is "${tgt}"${moveMessagesAndReport("srcMailbox", "tgtMailbox", message_ids)}
 end tell`;
 }
 
-export function buildDeleteToTrash(account_name, mailbox_name, message_id) {
+// message_ids: eine ID oder ein Array von IDs. Alles läuft in einem einzigen osascript-Aufruf,
+// Konto, Papierkorb und Quell-Mailbox werden nur einmal aufgelöst.
+export function buildDeleteToTrash(account_name, mailbox_name, message_ids) {
   const acc = escapeAppleScript(account_name);
   const mb = escapeAppleScript(mailbox_name);
   const trashNames = TRASH_MAILBOX_NAMES.map(n => `"${escapeAppleScript(n)}"`).join(", ");
@@ -324,7 +354,7 @@ export function buildDeleteToTrash(account_name, mailbox_name, message_id) {
     `Ordner mit mail_list_mailboxes ermitteln und die Mail mit mail_move dorthin verschieben.`
   );
   // Bewusst kein Fallback auf "delete": je nach Kontoeinstellung löscht das endgültig.
-  // Papierkorb zuerst suchen: Wird keiner gefunden, bricht das Script ab, bevor die Mail angefasst wird.
+  // Papierkorb zuerst suchen: Wird keiner gefunden, bricht das Script ab, bevor eine Mail angefasst wird.
   return `tell application "Mail"
   set targetAccount to first account whose name is "${acc}"
   set trashMailbox to missing value
@@ -337,9 +367,6 @@ export function buildDeleteToTrash(account_name, mailbox_name, message_id) {
     end if
   end repeat
   if trashMailbox is missing value then error "${notFound}"
-  set targetMailbox to first mailbox of targetAccount whose name is "${mb}"
-  set m to first message of targetMailbox whose id is ${message_id}
-  move m to trashMailbox
-  return name of trashMailbox
+  set targetMailbox to first mailbox of targetAccount whose name is "${mb}"${moveMessagesAndReport("targetMailbox", "trashMailbox", message_ids)}
 end tell`;
 }

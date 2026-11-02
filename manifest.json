@@ -30,8 +30,8 @@
     { "name": "mail_search", "description": "Mails in einer Mailbox suchen" },
     { "name": "mail_read", "description": "Eine Mail lesen" },
     { "name": "mail_compose_draft", "description": "Entwurf erstellen (kein automatisches Senden)" },
-    { "name": "mail_move", "description": "Mail in eine andere Mailbox verschieben" },
-    { "name": "mail_delete_to_trash", "description": "Mail in den Papierkorb verschieben" }
+    { "name": "mail_move", "description": "Eine oder mehrere Mails in eine andere Mailbox verschieben" },
+    { "name": "mail_delete_to_trash", "description": "Eine oder mehrere Mails in den Papierkorb verschieben" }
   ],
   "keywords": ["mcp", "mail", "applescript", "macos"],
   "license": "MIT"

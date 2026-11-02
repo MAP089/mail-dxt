@@ -10,6 +10,9 @@ export const LIMITS = {
   body_read_max_length: 50000,
   search_limit_default: 20,
   search_limit_max: 100,
+  // So viele Mails dürfen mail_move und mail_delete_to_trash pro Aufruf verschieben (entspricht search_limit_max,
+  // damit eine volle Trefferliste in einem Rutsch weg kann). Mehr riskiert den 40s-Timeout.
+  move_batch_max: 100,
 };
 
 // Claude Desktop bricht jeden Tool-Aufruf nach 60s ab (MCP-SDK-Default).
