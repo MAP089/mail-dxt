@@ -5,8 +5,8 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildDeleteToTrash } from "../server/applescript.js";
-import { TRASH_MAILBOX_NAMES } from "../server/config.js";
-import { validateMessageId, validateMailboxName, validateAccountName } from "../server/validator.js";
+import { TRASH_MAILBOX_NAMES, LIMITS } from "../server/config.js";
+import { validateMessageId, validateMessageIds, validateMailboxName, validateAccountName } from "../server/validator.js";
 
 // Kompiliert das Script nur (osacompile), führt es aber nicht aus – kein Zugriff auf Mail.app nötig.
 function assertCompiles(script) {
@@ -43,6 +43,21 @@ test("Escaping von Quotes und Backslashes", () => {
 
 test("kein permanentes delete im Script", () => {
   assert.doesNotMatch(buildDeleteToTrash("a", "b", 1), /\bdelete\b/);
+});
+
+test("mehrere Mails in einem Script, Papierkorb nur einmal gesucht", () => {
+  const script = buildDeleteToTrash("iCloud", "INBOX", [42, 43, 44]);
+  assertCompiles(script);
+  assert.match(script, /repeat with idRef in \{42, 43, 44\}/);
+  assert.equal(script.split("repeat with trashName").length - 1, 1);
+  assert.equal(script.split("first mailbox of targetAccount").length - 1, 1);
+});
+
+test("message_ids-Validierung", () => {
+  for (const bad of [[], "1,2", [1, "2"], [1, 0], null, Array(LIMITS.trash_batch_max + 1).fill(1)]) {
+    assert.throws(() => validateMessageIds(bad), String(bad));
+  }
+  assert.deepEqual(validateMessageIds([3, 1, 3]), [3, 1]);
 });
 
 test("message_id-Validierung", () => {

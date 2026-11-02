@@ -9,6 +9,7 @@ import {
   validateAccountName,
   validateMailboxName,
   validateMessageId,
+  validateMessageIds,
   validateEmailList,
   validateSubject,
   validateBody,
@@ -110,15 +111,23 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "mail_delete_to_trash",
-      description: "Verschiebt eine Mail in den Papierkorb. Löscht NIEMALS permanent.",
+      description:
+        "Verschiebt eine oder mehrere Mails derselben Mailbox in den Papierkorb. Löscht NIEMALS permanent. " +
+        `Mehrere Mails IMMER gesammelt über message_ids (max. ${LIMITS.trash_batch_max}) in einem Aufruf übergeben, ` +
+        "nicht das Tool pro Mail einzeln aufrufen.",
       inputSchema: {
         type: "object",
         properties: {
           account_name: { type: "string" },
           mailbox_name: { type: "string" },
-          message_id: { type: "number" },
+          message_ids: {
+            type: "array",
+            items: { type: "number" },
+            description: `IDs der Mails (aus mail_search), max. ${LIMITS.trash_batch_max}`,
+          },
+          message_id: { type: "number", description: "Einzelne ID – nur noch aus Kompatibilitätsgründen, besser message_ids" },
         },
-        required: ["account_name", "mailbox_name", "message_id"],
+        required: ["account_name", "mailbox_name"],
       },
     },
   ],
@@ -231,10 +240,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "mail_delete_to_trash": {
         validateAccountName(args.account_name);
         validateMailboxName(args.mailbox_name);
-        validateMessageId(args.message_id);
-        const script = buildDeleteToTrash(args.account_name, args.mailbox_name, args.message_id);
-        const trashMailbox = await runAppleScript(script, { retry: false });
-        result = { status: "Mail in Papierkorb verschoben", trash_mailbox: trashMailbox };
+        const ids = validateMessageIds(args.message_ids ?? (args.message_id === undefined ? [] : [args.message_id]));
+        const script = buildDeleteToTrash(args.account_name, args.mailbox_name, ids);
+        const raw = await runAppleScript(script, { retry: false });
+        const [trashMailbox, movedRaw = "", failedRaw = ""] = raw.split("|||");
+        const parseIds = (s) => s.split(",").map(x => x.trim()).filter(Boolean).map(Number);
+        const moved = parseIds(movedRaw);
+        const notMoved = parseIds(failedRaw);
+        if (moved.length === 0) {
+          throw new Error(`Keine der Mails gefunden bzw. verschiebbar (IDs: ${notMoved.join(", ")}).`);
+        }
+        result = {
+          status: `${moved.length} Mail(s) in Papierkorb verschoben`,
+          trash_mailbox: trashMailbox,
+          moved_ids: moved,
+          ...(notMoved.length ? { not_moved_ids: notMoved } : {}),
+        };
         break;
       }
 
