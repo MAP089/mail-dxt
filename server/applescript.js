@@ -187,7 +187,7 @@ export function buildListMailboxes(account_name) {
 end tell`;
 }
 
-export function buildSearch(account_name, mailbox_name, query, unread_only, limit) {
+export function buildSearch(account_name, mailbox_name, query, unread_only, limit, offset = 0) {
   const acc = escapeAppleScript(account_name);
   const mb = escapeAppleScript(mailbox_name);
   const q = query ? escapeAppleScript(query) : "";
@@ -230,7 +230,7 @@ export function buildSearch(account_name, mailbox_name, query, unread_only, limi
   set resultList to {}
   set found to 0
   set scanned to 0
-  set i to 1
+  set i to ${offset + 1}
 
   repeat while found < fetchLimit and scanned < scanMax and i ≤ msgCount
     set m to item i of msgRefs
@@ -253,7 +253,8 @@ export function buildSearch(account_name, mailbox_name, query, unread_only, limi
   set AppleScript's text item delimiters to "${LIST_SEPARATOR}"
   set joinedResult to resultList as string
   set AppleScript's text item delimiters to {""}
-  return joinedResult
+  -- Erstes Item: Position, bis zu der gesucht wurde (= offset für die nächste Seite), und Gesamtzahl
+  return ((i - 1) as string) & "/" & (msgCount as string) & "${LIST_SEPARATOR}" & joinedResult
 end tell`;
 }
 

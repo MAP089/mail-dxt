@@ -14,6 +14,7 @@ import {
   validateSubject,
   validateBody,
   validateSearchLimit,
+  validateSearchOffset,
 } from "./validator.js";
 import {
   runAppleScript,
@@ -53,7 +54,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "mail_search",
-      description: "Sucht Mails in einer Mailbox. Gibt Trefferliste mit Metadaten zurück.",
+      description:
+        "Sucht Mails in einer Mailbox (neueste zuerst). Gibt Trefferliste mit Metadaten zurück. " +
+        "Ist has_more true, gibt es weitere Mails: Aufruf mit offset = next_offset wiederholen, bis has_more false ist.",
       inputSchema: {
         type: "object",
         properties: {
@@ -62,6 +65,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           query: { type: "string", description: "Suchbegriff in Betreff/Absender (optional)" },
           unread_only: { type: "boolean", description: "Nur ungelesene Mails (default: false)" },
           limit: { type: "number", description: "Max. Anzahl Ergebnisse (default: 20, max: 100)" },
+          offset: { type: "number", description: "Startposition für Folgeseiten (default: 0). Wert next_offset aus der vorigen Antwort verwenden." },
         },
         required: ["account_name", "mailbox_name"],
       },
@@ -201,9 +205,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         validateMailboxName(args.mailbox_name);
         const limit = validateSearchLimit(args.limit);
         const unread_only = args.unread_only === true;
-        const script = buildSearch(args.account_name, args.mailbox_name, args.query, unread_only, limit);
+        const offset = validateSearchOffset(args.offset);
+        const script = buildSearch(args.account_name, args.mailbox_name, args.query, unread_only, limit, offset);
         const raw = await runAppleScript(script);
-        const lines = raw.split(LIST_SEPARATOR).map(s => s.trim()).filter(Boolean);
+        const [meta, ...lines] = raw.split(LIST_SEPARATOR).map(s => s.trim()).filter((s, i) => i === 0 || s);
+        const [scannedTo, total] = meta.split("/").map(Number);
         const messages = lines.map(line => {
           const parts = line.split("|||");
           return {
@@ -214,7 +220,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             is_read: parts[4] === "true",
           };
         });
-        result = { messages };
+        result = { messages, has_more: scannedTo < total, next_offset: scannedTo, total_in_mailbox: total };
         break;
       }
 

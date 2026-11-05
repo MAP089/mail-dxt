@@ -78,3 +78,12 @@ export function validateSearchLimit(limit) {
   }
   return Math.min(n, LIMITS.search_limit_max);
 }
+
+export function validateSearchOffset(offset) {
+  if (offset === undefined || offset === null) return 0;
+  const n = Number(offset);
+  if (!Number.isInteger(n) || n < 0) {
+    throw new Error("offset muss eine ganze Zahl >= 0 sein.");
+  }
+  return n;
+}
