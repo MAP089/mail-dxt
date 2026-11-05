@@ -21,3 +21,12 @@ test("AppleScript: ignoring diacriticals findet Céline mit celine", () => {
   assert.equal(runPlain('ignoring diacriticals\nreturn "Céline Marie" contains "celine"\nend ignoring'), "true");
   assert.equal(runPlain('return "Céline Marie" contains "celine"'), "false");
 });
+
+test("offset setzt die Startposition der Suche", () => {
+  assert.match(buildSearch("iCloud", "INBOX", "", false, 10, 200), /set i to 201/);
+  assert.match(buildSearch("iCloud", "INBOX", "", false, 10), /set i to 1\b/);
+});
+
+test("Suche liefert Position und Gesamtzahl als erstes Item", () => {
+  assert.match(buildSearch("iCloud", "INBOX", "", false, 10), /\(i - 1\) as string\) & "\/" & \(msgCount as string\)/);
+});

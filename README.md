@@ -12,7 +12,7 @@ Sichere Mail.app-Steuerung für Claude Desktop – als Desktop Extension (DXT) v
 | --- | --- |
 | `mail_list_accounts` | Alle Mail-Konten auflisten |
 | `mail_list_mailboxes` | Mailboxen eines Kontos auflisten |
-| `mail_search` | Mails in einer Mailbox suchen |
+| `mail_search` | Mails in einer Mailbox suchen (seitenweise per `offset`, Antwort enthält `has_more` und `next_offset`) |
 | `mail_read` | Eine einzelne Mail lesen |
 | `mail_compose_draft` | Entwurf erstellen (kein automatisches Senden) |
 | `mail_move` | Eine oder mehrere Mails (bis 100 auf einmal) in eine andere Mailbox verschieben |
